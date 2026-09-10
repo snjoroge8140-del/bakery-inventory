@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bakekery Inventory — Cloud Bakery Management</title>
+<title>Bakery Inventory — Cloud Bakery Management</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
@@ -142,14 +142,14 @@ tbody tr:last-child td{border-bottom:0}
 </style></head>
 <body>
 <div id="auth" class="auth-bg"><div class="auth-card">
-<h1>Bakekery Inventory</h1><p>Cloud bakery stock, production, purchases, sales and reports.</p>
+<h1>Bakery Inventory</h1><p>Cloud bakery stock, production, purchases, sales and reports.</p>
 <div class="field"><label class="small">Email</label><input id="loginEmail" type="email" autocomplete="email" placeholder="Email"></div>
 <div class="field"><label class="small">Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password"></div>
 <button class="btn" id="loginBtn" style="width:100%">Sign in</button><button class="btn ghost" id="signupBtn" style="width:100%;margin-top:8px">Create account</button>
 <div id="authMsg" class="auth-msg"></div></div></div>
 
 <div class="wrap" id="app" style="display:none">
-<header class="top"><div><input id="bakeryName" class="name-field" value="Bakekery Inventory" spellcheck="false"></div>
+<header class="top"><div><input id="bakeryName" class="name-field" value="Bakery Inventory" spellcheck="false"></div>
 <div class="top-actions"><span class="user-chip" id="userChip"></span><button class="btn ghost small" id="logoutBtn">Sign out</button><div class="sync"><span class="dot" id="syncDot"></span><span id="syncText">Connecting…</span></div></div></header>
 <nav class="nav" id="nav">
 <button data-page="dashboard" class="active">Dashboard</button><button data-page="inventory">Inventory</button><button data-page="production">Production</button><button data-page="purchases">Purchases</button><button data-page="sales">Sales</button><button data-page="wastage">Wastage</button><button data-page="expenses">Expenses</button><button data-page="reports">Reports</button>
@@ -219,7 +219,7 @@ function message(id,t,ok){$(id).innerHTML=t?'<div class="'+(ok?'ok':'alert')+'">
 function toast(t,e){const d=document.createElement('div');d.className='toast'+(e?' err':'');d.textContent=t;d.style.cssText='position:fixed;right:14px;bottom:14px;z-index:300;background:#3b2a1d;border:1px solid '+(e?'#c15b4e':'rgba(243,232,214,.12)')+';padding:11px 14px;border-radius:6px;max-width:360px;font-size:.8rem';document.body.appendChild(d);setTimeout(()=>d.remove(),3500)}
 function sync(ok,t){$('syncDot').className='dot'+(ok?'':' err');$('syncText').textContent=t||(ok?'Connected':'Connection error')}
 function init(){if(!window.supabase){$('authMsg').textContent='Supabase could not load. Connect to the internet and reopen the file.';return false}db=window.supabase.createClient(URL,KEY);return true}
-async function login(){const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!email||!password){$('authMsg').textContent='Enter your email and password.';return}$('loginBtn').disabled=true;$('authMsg').textContent='Connecting to Bakekery Inventory…';try{const r=await db.auth.signInWithPassword({email,password});if(r.error)throw r.error}catch(e){$('authMsg').textContent=e.message||String(e);$('loginBtn').disabled=false}}
+async function login(){const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!email||!password){$('authMsg').textContent='Enter your email and password.';return}$('loginBtn').disabled=true;$('authMsg').textContent='Connecting to Bakery Inventory…';try{const r=await db.auth.signInWithPassword({email,password});if(r.error)throw r.error}catch(e){$('authMsg').textContent=e.message||String(e);$('loginBtn').disabled=false}}
 async function signup(){const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!email||password.length<6){$('authMsg').textContent='Enter a valid email and a password of at least 6 characters.';return}try{const r=await db.auth.signUp({email,password});if(r.error)throw r.error;$('authMsg').textContent=r.data.session?'Account created.':'Account created. Confirm your email if requested.'}catch(e){$('authMsg').textContent=e.message||String(e)}}
 async function start(session){user=session?.user;if(!user){$('app').style.display='none';$('auth').style.display='flex';return}try{const p=await db.from('profiles').select('*').eq('id',user.id).maybeSingle();if(p.error)throw p.error;profile=p.data;$('userChip').textContent=(profile?.full_name||user.email)+' · '+(profile?.role||'staff');$('auth').style.display='none';$('app').style.display='block';await refresh()}catch(e){$('authMsg').textContent='Signed in, but data could not load: '+e.message;sync(false)}}
 async function refresh(){try{let r=await db.from('inventory_items').select('*').eq('active',true).order('item_type').order('name');if(r.error)throw r.error;items=r.data||[];let [a,b]=await Promise.all([db.from('recipes').select('*').eq('active',true).order('name'),db.from('recipe_items').select('*,ingredient:inventory_items(id,name,unit)').order('id')]);if(a.error)throw a.error;if(b.error)throw b.error;recipes=a.data||[];recipeItems=b.data||[];renderInventory();renderDashboard();renderRecipes();selectors();await Promise.all([recentProduction(),recentPurchases(),recentSales(),recentWastage(),recentExpenses()]);await loadSnapshots();sync(true,'Synced just now')}catch(e){sync(false,'Connection error');toast(e.message||String(e),true)}}
