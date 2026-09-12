@@ -172,11 +172,13 @@ tbody tr:last-child td{border-bottom:0}
 <section id="production" class="page">
 <div class="card">
 <h2>Record production</h2>
-<div class="mini" style="margin:-6px 0 13px">Select the exact product produced. Each product uses its base batch recipe; only the finished yield changes where specified.</div>
+<div class="mini" style="margin:-6px 0 13px">Select the product and the amount of base batches used. Expected yield is calculated in real time; enter the actual yield separately because it can vary.</div>
 <div id="prodMsg"></div>
 <div class="form-grid">
 <div><label class="small">Product</label><select id="prodRecipe"></select></div>
-<div><label class="small">Batches</label><input id="prodBatches" type="number" min="0.01" step="0.01" value="1"></div>
+<div><label class="small">Base batches / bales</label><input id="prodBatches" type="number" min="0.01" step="0.01" value="1"></div>
+<div><label class="small">Expected yield</label><input id="prodExpectedYield" type="number" step="0.01" readonly></div>
+<div><label class="small">Actual yield produced</label><input id="prodActualYield" type="number" min="0.01" step="0.01" placeholder="Enter actual output"></div>
 <div><label class="small">Notes</label><input id="prodNotes" placeholder="Optional"></div>
 </div>
 <div id="prodPreview" class="preview">Select a product and number of batches to preview raw-material usage and expected yield.</div>
@@ -280,7 +282,7 @@ function productSelectHtml(){
   let out='<option value="">Select product</option>',last='';
   PRODUCT_SPECS.forEach(x=>{
     if(x.group!==last){ if(last) out+='</optgroup>'; out+='<optgroup label="'+esc(x.group)+'">';last=x.group; }
-    out+='<option value="'+x.key+'">'+esc(x.name)+' — '+x.yield+' '+esc(x.unit)+'</option>';
+    out+='<option value="'+x.key+'">'+esc(x.name)+'</option>';
   });
   if(last) out+='</optgroup>';
   return out;
@@ -294,7 +296,7 @@ function renderProductRecipes(){
       '<div class="grid2" style="margin-top:9px">'+list.map(x=>
         '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;background:rgba(0,0,0,.08)">'+
         '<div style="font-weight:700;font-size:.8rem">'+esc(x.name)+'</div>'+
-        '<div class="mini" style="margin:3px 0 7px">1 '+esc(BASE_GROUP_LABELS[x.base])+' → <b>'+x.yield+' '+esc(x.unit)+'</b></div>'+
+        '<div class="mini" style="margin:3px 0 7px">Baseline: 1 '+esc(BASE_GROUP_LABELS[x.base])+' → <b>'+x.yield+' '+esc(x.unit)+'</b></div>'+
         '<div class="mini">'+x.ingredients.filter(a=>a[1]!==null).map(a=>esc(a[0])+': '+a[1]+' '+a[2]).join(' · ')+'</div>'+
         (x.ingredients.some(a=>a[1]===null)?'<div class="mini" style="margin-top:4px;color:var(--butter)">Baking powder quantity: not specified in the supplied batch figures.</div>':'')+
         '</div>').join('')+'</div></div>';
@@ -321,31 +323,40 @@ window.editItem=async function(id){let i=items.find(x=>x.id===id),n=prompt('Item
 // Production UI override: specific products use the existing base recipe for stock
 // deduction, while the specified product yield is recorded.
 const _oldPreview=preview;
+let actualYieldAuto=true;
+function normalizeProductName(v){return String(v||'').toLowerCase().replace(/s/g,'').replace(/[^a-z0-9]/g,'');}
+function recipeForSpec(spec){
+  if(!spec)return null;
+  return recipes.find(r=>{
+    const product=items.find(i=>i.id===r.product_id);
+    return product && normalizeProductName(product.name)===normalizeProductName(spec.name);
+  })||null;
+}
+function expectedYieldForSpec(spec,batches){return spec?Number(spec.yield)*Number(batches||0):0;}
 preview=function(){
-  const spec=specForSelection(), b=Number($('prodBatches').value)||0;
-  if(!spec||b<=0){$('prodPreview').textContent='Select a product and number of batches to preview raw-material usage and expected yield.';return}
-  const base=baseRecipeForSpec(spec);
-  let usage=spec.ingredients.filter(x=>x[1]!==null).map(x=>esc(x[0])+': <b>'+(Number(x[1])*b).toFixed(3)+'</b> '+esc(x[2])).join(' · ');
-  $('prodPreview').innerHTML='<b>'+esc(spec.name)+'</b> · '+b+' base batch(es) → <b>'+(spec.yield*b)+'</b> '+esc(spec.unit)+
-    '<br><span class="mini">Raw materials: '+usage+'</span>'+
-    (spec.ingredients.some(x=>x[1]===null)?'<br><span class="mini" style="color:var(--butter)">Baking powder quantity was not provided, so it is not invented or changed.</span>':'')+
-    (!base?'<br><span class="mini" style="color:var(--jam)">Matching base recipe is not currently present in Supabase.</span>':'');
+  const spec=specForSelection(),b=Number($('prodBatches').value)||0,expected=expectedYieldForSpec(spec,b);
+  if($('prodExpectedYield'))$('prodExpectedYield').value=expected>0?expected:'';
+  if($('prodActualYield')&&(actualYieldAuto||!$('prodActualYield').value)){$('prodActualYield').value=expected>0?expected:'';actualYieldAuto=true;}
+  if(!spec||b<=0){$('prodPreview').textContent='Select a product and base-batch quantity to preview ingredient usage and expected yield.';return}
+  const base=recipeForSpec(spec);
+  if(!base){$('prodPreview').innerHTML='<b>'+esc(spec.name)+'</b><br><span class="mini" style="color:var(--jam)">The matching product recipe is not currently present in Supabase.</span>';return}
+  const rows=recipeItems.filter(x=>x.recipe_id===base.id);
+  const usage=rows.map(x=>{const need=Number(x.quantity_per_output)*Number(base.base_batch_yield||spec.yield)*b;return esc(x.ingredient?.name||'')+': <b>'+need.toFixed(3)+'</b> '+esc(x.ingredient?.unit||'');}).join(' · ');
+  $('prodPreview').innerHTML='<b>'+esc(spec.name)+'</b> · '+b+' base batch(es) → expected <b>'+expected+'</b> '+esc(spec.unit)+
+    '<br><span class="mini">Raw materials for '+b+' base batch(es): '+usage+'</span>'+
+    '<br><span class="mini">Actual yield is recorded separately and may differ from the expected yield.</span>';
 };
 renderRecipes=function(){renderProductRecipes()};
 async function produce(){
-  const spec=specForSelection(),b=Number($('prodBatches').value)||0,base=spec&&baseRecipeForSpec(spec);
-  if(!spec||b<=0){message('prodMsg','Select a product and positive batches.');return}
-  if(!base){message('prodMsg','The existing Supabase base recipe for '+spec.name+' could not be found. Nothing was changed.');return}
+  const spec=specForSelection(),b=Number($('prodBatches').value)||0,base=recipeForSpec(spec),expected=expectedYieldForSpec(spec,b),actual=Number($('prodActualYield').value)||0;
+  if(!spec||b<=0){message('prodMsg','Select a product and positive base-batch quantity.');return}
+  if(!base){message('prodMsg','The matching Supabase recipe for '+spec.name+' could not be found. Nothing was changed.');return}
+  if(actual<=0){message('prodMsg','Enter the actual yield produced.');return}
   try{
-    // Use the existing base recipe ID so its existing raw-material deduction remains intact.
-    // Only the finished-product yield/selection is changed here.
-    let productId=base.product_id;
-    let z=await db.rpc('record_production',{p_recipe_id:base.id,p_output_quantity:spec.yield*b,p_notes:(spec.name+' · '+b+' base batch(es)'+($('prodNotes').value.trim()?' · '+$('prodNotes').value.trim():''))});
+    const z=await db.rpc('record_production_dynamic',{p_recipe_id:base.id,p_batches:b,p_output_quantity:actual,p_notes:(spec.name+' · '+b+' base batch(es) · expected '+expected+' '+spec.unit+' · actual '+actual+' '+spec.unit+($('prodNotes').value.trim()?' · '+$('prodNotes').value.trim():''))});
     if(z.error)throw z.error;
-    message('prodMsg','Production recorded: '+spec.name+' — '+(spec.yield*b)+' '+spec.unit+'. Base-batch stock deductions were applied.',true);
-    await refresh();
-    $('prodRecipe').value=spec.key;
-    preview();
+    message('prodMsg','Production recorded: '+spec.name+' — actual '+actual+' '+spec.unit+'. Ingredients were deducted for '+b+' base batch(es).',true);
+    await refresh();$('prodRecipe').value=spec.key;actualYieldAuto=false;preview();
   }catch(e){message('prodMsg',e.message||String(e))}
 }
 renderRecipes=()=>renderProductRecipes();
@@ -379,7 +390,7 @@ async function closeDay(){
   message('closeMsg','Day '+day+' was saved to the cloud.',true);await loadSnapshots();
  }catch(e){message('closeMsg',e.message||String(e))}
 }
-$('loginBtn').onclick=login;$('signupBtn').onclick=signup;$('loginPassword').onkeydown=e=>{if(e.key==='Enter')login()};$('logoutBtn').onclick=()=>db.auth.signOut();$('invSearch').oninput=renderInventory;$('invType').onchange=renderInventory;$('addItemBtn').onclick=()=>toast('Use the Supabase Inventory table or ask me to add a full item-entry form in the next revision.');$('prodRecipe').onchange=preview;$('prodBatches').oninput=preview;$('produceBtn').onclick=produce;$('addPurchaseLine').onclick=()=>addLine('purchase');$('savePurchase').onclick=savePurchase;$('addSaleLine').onclick=()=>addLine('sale');$('saveSale').onclick=saveSale;$('saveWaste').onclick=saveWaste;$('saveExpense').onclick=saveExpense;
+$('loginBtn').onclick=login;$('signupBtn').onclick=signup;$('loginPassword').onkeydown=e=>{if(e.key==='Enter')login()};$('logoutBtn').onclick=()=>db.auth.signOut();$('invSearch').oninput=renderInventory;$('invType').onchange=renderInventory;$('addItemBtn').onclick=()=>toast('Use the Supabase Inventory table or ask me to add a full item-entry form in the next revision.');$('prodRecipe').onchange=()=>{actualYieldAuto=true;preview()};$('prodBatches').oninput=()=>{actualYieldAuto=true;preview()};$('prodActualYield').oninput=()=>{actualYieldAuto=false};$('produceBtn').onclick=produce;$('addPurchaseLine').onclick=()=>addLine('purchase');$('savePurchase').onclick=savePurchase;$('addSaleLine').onclick=()=>addLine('sale');$('saveSale').onclick=saveSale;$('saveWaste').onclick=saveWaste;$('saveExpense').onclick=saveExpense;
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(b.dataset.page).classList.add('active');document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active')});
 $('loadReport').onclick=async()=>{let m=$('reportMonth').value||today().slice(0,7),start=m+'-01',d=new Date(start+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+1);let end=d.toISOString(),rs=await Promise.all([db.from('sales').select('total').gte('sale_date',start).lt('sale_date',end),db.from('purchases').select('total').gte('purchase_date',start).lt('purchase_date',end),db.from('expenses').select('amount').gte('expense_date',start).lt('expense_date',end)]);if(rs.some(x=>x.error)){toast('Could not load report.',true);return}let a=rs[0].data.reduce((s,x)=>s+Number(x.total),0),p=rs[1].data.reduce((s,x)=>s+Number(x.total),0),e=rs[2].data.reduce((s,x)=>s+Number(x.amount),0);$('reportKpis').innerHTML=[[money(a),'Sales'],[money(p),'Purchases'],[money(e),'Expenses'],[money(a-p-e),'Cash movement']].map(x=>'<div class="kpi"><div class="big">'+esc(x[0])+'</div><div class="lbl">'+esc(x[1])+'</div></div>').join('')};
 $('closeDayBtn').onclick=closeDay;$('closeDate').value=today();loadSnapshots();$('saveDaily').onclick=async()=>{let r=await db.from('daily_records').upsert({record_date:$('dailyDate').value,opening_cash:Number($('openingCash').value)||0,closing_cash:Number($('closingCash').value)||0,notes:$('dailyNotes').value,updated_by:user.id,updated_at:new Date().toISOString()},{onConflict:'record_date'});if(r.error)toast(r.error.message,true);else toast('Daily record saved.')};
