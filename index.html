@@ -284,7 +284,7 @@ function init(){if(!window.supabase){$('authMsg').textContent='Supabase could no
 async function logActivity(action,section,details){
   try{
     if(!db||!user)return;
-    await db.from('activity_logs').insert({
+    await db.from('activity_log').insert({
       user_id:user.id, action:String(action), section:String(section||''),
       details:details||{}
     });
@@ -304,6 +304,13 @@ function fillSelect(id,values,placeholder){
   if([...el.options].some(o=>o.value===cur))el.value=cur;
 }
 async function loadActivity(){
+  try{
+  $('activityRows').innerHTML='<tr><td colspan="5">Loading…</td></tr>';
+  const isDerrickActivityUser=String(profile?.full_name||profile?.name||'').trim().toLowerCase().includes('derrick');
+  if(isDerrickActivityUser){
+    $('activityRows').innerHTML='<tr><td colspan="5">Activity Log is available to management only.</td></tr>';
+    return;
+  }
   if(!db||!profile)return;
   const role=String(profile.role||'').toLowerCase();
   if(!['owner','admin','manager','ceo'].includes(role)){
@@ -311,7 +318,7 @@ async function loadActivity(){
   }
   // Pull a broader, unfiltered slice just to populate the Employee/Action filter dropdowns,
   // so the filters offer real options instead of only ever showing "All".
-  const opts=await db.from('activity_logs').select('user_id,action').order('created_at',{ascending:false}).limit(1000);
+  const opts=await db.from('activity_log').select('user_id,action').order('created_at',{ascending:false}).limit(1000);
   if(!opts.error){
     const optRows=opts.data||[];
     await namesForUserIds(optRows.map(x=>x.user_id));
@@ -320,7 +327,7 @@ async function loadActivity(){
     fillSelect('activityUser',userVals,'All employees');
     fillSelect('activityAction',actionVals,'All actions');
   }
-  let q=db.from('activity_logs').select('created_at,user_id,action,section,details')
+  let q=db.from('activity_log').select('created_at,user_id,action,section,details')
     .order('created_at',{ascending:false}).limit(500);
   const f=$('activityFrom')?.value,t=$('activityTo')?.value;
   if(f)q=q.gte('created_at',f+'T00:00:00');
@@ -336,9 +343,10 @@ async function loadActivity(){
     const d=typeof x.details==='object'?JSON.stringify(x.details):String(x.details||'');
     return '<tr><td>'+esc(dateFmt(x.created_at))+'</td><td>'+esc(who)+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.section)+'</td><td>'+esc(d)+'</td></tr>';
   }).join('')||'<tr><td colspan="5">No activity found.</td></tr>';
+  }catch(e){$('activityRows').innerHTML='<tr><td colspan="5">'+esc(e.message||String(e))+'</td></tr>';}
 }
 async function login(){const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!email||!password){$('authMsg').textContent='Enter your email and password.';return}$('loginBtn').disabled=true;$('authMsg').textContent='Connecting to Bakery Inventory…';try{const r=await db.auth.signInWithPassword({email,password});if(r.error)throw r.error;if(r.data?.user){
-  await db.from('activity_logs').insert({
+  await db.from('activity_log').insert({
     user_id:r.data.user.id,
     action:'Login',
     section:'Authentication',
@@ -346,7 +354,7 @@ async function login(){const email=$('loginEmail').value.trim(),password=$('logi
   });
 }}catch(e){$('authMsg').textContent=e.message||String(e);$('loginBtn').disabled=false}}
 async function signup(){const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!email||password.length<6){$('authMsg').textContent='Enter a valid email and a password of at least 6 characters.';return}try{const r=await db.auth.signUp({email,password});if(r.error)throw r.error;$('authMsg').textContent=r.data.session?'Account created.':'Account created. Confirm your email if requested.'}catch(e){$('authMsg').textContent=e.message||String(e)}}
-async function start(session){user=session?.user;if(!user){$('app').style.display='none';$('auth').style.display='flex';return}try{const p=await db.from('profiles').select('*').eq('id',user.id).maybeSingle();if(p.error)throw p.error;profile=p.data;const displayRole=String(user.email||'').toLowerCase()==='emaka615@gmail.com'?'CEO':String(user.email||'').toLowerCase()==='bushekan@yahoo.co.uk'?'Managing Director':(profile?.role||'staff');$('userChip').textContent=(profile?.full_name||user.email)+' · '+displayRole;$('auth').style.display='none';$('app').style.display='block';await refresh()}catch(e){$('authMsg').textContent='Signed in, but data could not load: '+e.message;sync(false)}}
+async function start(session){user=session?.user;if(!user){$('app').style.display='none';$('auth').style.display='flex';return}try{const p=await db.from('profiles').select('*').eq('id',user.id).maybeSingle();if(p.error)throw p.error;profile=p.data;$('userChip').textContent=(profile?.full_name||user.email)+' · '+(profile?.role||'staff');$('auth').style.display='none';$('app').style.display='block';await refresh()}catch(e){$('authMsg').textContent='Signed in, but data could not load: '+e.message;sync(false)}}
 async function refresh(){try{let r=await db.from('inventory_items').select('*').eq('active',true).order('item_type').order('name');if(r.error)throw r.error;items=r.data||[];let [a,b]=await Promise.all([db.from('recipes').select('*').eq('active',true).order('name'),db.from('recipe_items').select('*,ingredient:inventory_items(id,name,unit)').order('id')]);if(a.error)throw a.error;if(b.error)throw b.error;recipes=a.data||[];recipeItems=b.data||[];renderInventory();renderDashboard();renderRecipes();selectors();await Promise.all([recentProduction(),recentPurchases(),recentSales(),recentWastage(),recentExpenses()]);await loadSnapshots();sync(true,'Synced just now')}catch(e){sync(false,'Connection error');toast(e.message||String(e),true)}}
 function stat(i){if(Number(i.current_qty)<=0)return['bad','Out'];if(Number(i.current_qty)<=Number(i.reorder_level)&&Number(i.reorder_level)>0)return['warn','Low'];return['good','In stock']}
 let alertedLowIds=new Set();
@@ -614,16 +622,14 @@ async function closeDay(){
 (function initBakeryName(){try{const saved=localStorage.getItem('bakeryName');if(saved)$('bakeryName').value=saved;document.title=($('bakeryName').value||'Bakery Inventory')+' — Cloud Bakery Management';}catch(e){}})();
 $('bakeryName').addEventListener('input',()=>{try{localStorage.setItem('bakeryName',$('bakeryName').value);document.title=($('bakeryName').value||'Bakery Inventory')+' — Cloud Bakery Management';}catch(e){}});
 $('loginBtn').onclick=login;$('signupBtn').onclick=signup;$('loginPassword').onkeydown=e=>{if(e.key==='Enter')login()};$('logoutBtn').onclick=()=>db.auth.signOut();$('invSearch').oninput=renderInventory;$('invType').onchange=renderInventory;$('addItemBtn').onclick=openItemModal;$('itemModalClose').onclick=closeItemModal;$('itemModalCancel').onclick=closeItemModal;$('itemModal').onclick=e=>{if(e.target.id==='itemModal')closeItemModal()};$('newItemSave').onclick=saveNewItem;$('newItemType').onchange=syncNewItemUnit;$('prodRecipe').onchange=()=>{actualYieldAuto=true;preview()};$('prodBatches').oninput=()=>{actualYieldAuto=true;preview()};$('prodActualYield').oninput=()=>{actualYieldAuto=false};$('produceBtn').onclick=produce;$('addPurchaseLine').onclick=()=>addLine('purchase');$('savePurchase').onclick=savePurchase;$('addSaleLine').onclick=()=>addLine('sale');$('saveSale').onclick=saveSale;$('addLabanSaleLine').onclick=()=>addLine('labansale');$('saveLabanSale').onclick=saveLabanSale;$('saveWaste').onclick=saveWaste;$('saveExpense').onclick=saveExpense;
-document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(b.dataset.page).classList.add('active');document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active')});
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(b.dataset.page).classList.add('active');document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');if(b.dataset.page==='activity')loadActivity()});
 $('loadReport').onclick=async()=>{let m=$('reportMonth').value||today().slice(0,7),start=m+'-01',d=new Date(start+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+1);let end=d.toISOString(),rs=await Promise.all([db.from('sales').select('total').gte('sale_date',start).lt('sale_date',end),db.from('purchases').select('total').gte('purchase_date',start).lt('purchase_date',end),db.from('expenses').select('amount').gte('expense_date',start).lt('expense_date',end)]);if(rs.some(x=>x.error)){toast('Could not load report.',true);return}let a=rs[0].data.reduce((s,x)=>s+Number(x.total),0),p=rs[1].data.reduce((s,x)=>s+Number(x.total),0),e=rs[2].data.reduce((s,x)=>s+Number(x.amount),0);$('reportKpis').innerHTML=[[money(a),'Sales'],[money(p),'Purchases'],[money(e),'Expenses'],[money(a-p-e),'Cash movement']].map(x=>'<div class="kpi"><div class="big">'+esc(x[0])+'</div><div class="lbl">'+esc(x[1])+'</div></div>').join('')};
 $('closeDayBtn').onclick=closeDay;$('closeDate').value=today();loadSnapshots();$('saveDaily').onclick=async()=>{let r=await db.from('daily_records').upsert({record_date:$('dailyDate').value,opening_cash:Number($('openingCash').value)||0,closing_cash:Number($('closingCash').value)||0,notes:$('dailyNotes').value,updated_by:user.id,updated_at:new Date().toISOString()},{onConflict:'record_date'});if(r.error)toast(r.error.message,true);else{await logActivity('Daily Record','Reports',{date:$('dailyDate').value,closing_cash:Number($('closingCash').value)||0});toast('Daily record saved.')}};
 $('dailyDate').value=today();$('reportMonth').value=today().slice(0,7);addLine('purchase');addLine('sale');addLine('labansale');if(init()){db.auth.onAuthStateChange((e,s)=>setTimeout(()=>start(s),0));db.auth.getSession().then(x=>start(x.data.session)).catch(e=>$('authMsg').textContent=e.message)}
 })();
 /* loadActivityBtnWired */
 document.addEventListener('DOMContentLoaded',()=>{
-  const b=document.getElementById('loadActivity'); if(b)b.onclick=loadActivity;
-  const n=document.querySelector('[data-page="activity"]');
-  if(n)n.addEventListener('click',loadActivity);
+  const b=document.getElementById('loadActivity'); if(b)b.onclick=()=>loadActivity();
 });
 </script>
 </body>
