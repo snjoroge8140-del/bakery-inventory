@@ -181,7 +181,7 @@ tbody tr:last-child td{border-bottom:0}
 <button class="btn" id="addItemBtn">+ Add item</button>
 </div></div>
 <div class="card"><h2>Raw Materials <span class="pill" id="rawCount"></span></h2>
-<div class="table-wrap"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Qty</th><th>Reorder</th><th>Cost</th><th>Selling</th><th>Status</th><th></th></tr></thead><tbody id="rawRows"></tbody></table></div></div>
+<div class="table-wrap"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Qty</th><th>Reorder</th><th>Cost</th><th>Status</th><th></th></tr></thead><tbody id="rawRows"></tbody></table></div></div>
 <div class="card"><h2>Finished Products <span class="pill" id="finishedCount"></span></h2>
 <div class="table-wrap"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Qty</th><th>Reorder</th><th>Cost</th><th>Selling</th><th>Status</th><th></th></tr></thead><tbody id="finishedRows"></tbody></table></div></div>
 </section>
@@ -260,7 +260,7 @@ tbody tr:last-child td{border-bottom:0}
 <div><label class="small">Opening quantity</label><input id="newItemQty" type="number" min="0" step="0.001" value="0"></div>
 <div><label class="small">Reorder level</label><input id="newItemReorder" type="number" min="0" step="0.001" value="0"></div>
 <div><label class="small">Cost per unit</label><input id="newItemCost" type="number" min="0" step="0.01" value="0"></div>
-<div><label class="small">Selling price</label><input id="newItemPrice" type="number" min="0" step="0.01" value="0"></div>
+<div id="newItemPriceWrap"><label class="small">Selling price</label><input id="newItemPrice" type="number" min="0" step="0.01" value="0"></div>
 </div>
 <div style="margin-top:14px;display:flex;gap:9px"><button class="btn" id="newItemSave">Add item</button><button class="btn ghost" id="itemModalCancel">Cancel</button></div>
 </div></div>
@@ -367,9 +367,9 @@ function renderDashboard(){const raw=items.filter(i=>i.item_type==='raw_material
 function renderInventory(){
  const q=($('invSearch').value||'').toLowerCase(), t=$('invType').value;
  const a=items.filter(i=>(!q||i.name.toLowerCase().includes(q))&&(!t||i.item_type===t)&&!isHiddenFinishedProduct(i));
- const draw=arr=>arr.map(i=>{let s=stat(i);return '<tr><td><b>'+esc(i.name)+'</b></td><td>'+esc(i.item_type.replace('_',' '))+'</td><td>'+esc(finishedDisplayUnit(i))+'</td><td>'+qtyFmt(i.current_qty)+'</td><td>'+qtyFmt(i.reorder_level)+'</td><td>'+money(i.cost_per_unit)+'</td><td>'+money(i.selling_price)+'</td><td><span class="pill '+s[0]+'">'+s[1]+'</span></td><td style="white-space:nowrap"><button class="icon-btn" onclick="editItem(\''+i.id+'\')">Edit</button> <button class="icon-btn" onclick="deactivateItem(\''+i.id+'\',\''+esc(i.name).replace(/'/g,"\\'")+'\')">Remove</button></td></tr>'}).join('');
+ const draw=arr=>arr.map(i=>{let s=stat(i);let selling=i.item_type==='finished_product'?'<td>'+money(i.selling_price)+'</td>':'';return '<tr><td><b>'+esc(i.name)+'</b></td><td>'+esc(i.item_type.replace('_',' '))+'</td><td>'+esc(finishedDisplayUnit(i))+'</td><td>'+qtyFmt(i.current_qty)+'</td><td>'+qtyFmt(i.reorder_level)+'</td><td>'+money(i.cost_per_unit)+'</td>'+selling+'<td><span class="pill '+s[0]+'">'+s[1]+'</span></td><td style="white-space:nowrap"><button class="icon-btn" onclick="editItem(\''+i.id+'\')">Edit</button> <button class="icon-btn" onclick="deactivateItem(\''+i.id+'\',\''+esc(i.name).replace(/'/g,"\\'")+'\')">Remove</button></td></tr>'}).join('');
  const raw=a.filter(i=>i.item_type==='raw_material'), fin=a.filter(i=>i.item_type==='finished_product');
- $('rawRows').innerHTML=draw(raw)||'<tr><td colspan="9" class="empty">No raw materials found.</td></tr>';
+ $('rawRows').innerHTML=draw(raw)||'<tr><td colspan="8" class="empty">No raw materials found.</td></tr>';
  $('finishedRows').innerHTML=draw(fin)||'<tr><td colspan="9" class="empty">No finished products found.</td></tr>';
  $('rawCount').textContent=raw.length; $('finishedCount').textContent=fin.length;
 }
@@ -512,18 +512,23 @@ window.editItem=async function(id){
   let q=prompt('Quantity ('+uLabel+'):',i.current_qty);if(q===null)return;
   let re=prompt('Reorder level ('+uLabel+'):',i.reorder_level);if(re===null)return;
   let c=prompt('Cost per unit:',i.cost_per_unit);if(c===null)return;
-  let s=prompt('Selling price:',i.selling_price);if(s===null)return;
-  let r=await db.from('inventory_items').update({name:n.trim(),current_qty:Number(q),reorder_level:Number(re),cost_per_unit:Number(c),selling_price:Number(s)}).eq('id',id);
+  let payload={name:n.trim(),current_qty:Number(q),reorder_level:Number(re),cost_per_unit:Number(c)};
+  if(i.item_type==='finished_product'){let sp=prompt('Selling price:',i.selling_price);if(sp===null)return;payload.selling_price=Number(sp)}
+  let r=await db.from('inventory_items').update(payload).eq('id',id);
   if(r.error)toast(r.error.message,true);else{await logActivity('Edit Item','Inventory',{item_id:id,name:n.trim(),quantity:Number(q),reorder_level:Number(re)});refresh()}
 }
-window.deactivateItem=async function(id,name){if(!confirm('Remove "'+name+'" from active inventory? It will be hidden from lists but its history is kept.'))return;let r=await db.from('inventory_items').update({active:false}).eq('id',id);if(r.error)toast(r.error.message,true);else{await logActivity('Remove Item','Inventory',{item_id:id,item:name});toast('"'+name+'" removed from active inventory.');refresh()}}
-function syncNewItemUnit(){const fin=$('newItemType').value==='finished_product';$('newItemUnit').disabled=fin;if(fin)$('newItemUnit').value='packets';}
-function openItemModal(){$('itemModalMsg').innerHTML='';$('newItemName').value='';$('newItemType').value='raw_material';$('newItemUnit').disabled=false;$('newItemUnit').value='';$('newItemQty').value='0';$('newItemReorder').value='0';$('newItemCost').value='0';$('newItemPrice').value='0';$('itemModal').classList.add('open');$('newItemName').focus()}
+window.deactivateItem=async function(id,name){
+  if(!window.confirm('Are you sure you would like to remove "'+name+'"?\n\nThe item will be hidden from active inventory, but its history will be kept.'))return;
+  let r=await db.from('inventory_items').update({active:false}).eq('id',id);
+  if(r.error)toast(r.error.message,true);else{await logActivity('Remove Item','Inventory',{item_id:id,item:name});toast('"'+name+'" removed from active inventory.');refresh()}
+}
+function syncNewItemUnit(){const fin=$('newItemType').value==='finished_product';$('newItemUnit').disabled=fin;if(fin)$('newItemUnit').value='packets';const pw=$('newItemPriceWrap');if(pw)pw.style.display=fin?'':'none';}
+function openItemModal(){$('itemModalMsg').innerHTML='';$('newItemName').value='';$('newItemType').value='raw_material';$('newItemUnit').disabled=false;$('newItemUnit').value='';$('newItemQty').value='0';$('newItemReorder').value='0';$('newItemCost').value='0';$('newItemPrice').value='0';$('itemModal').classList.add('open');syncNewItemUnit();$('newItemName').focus()}
 function closeItemModal(){$('itemModal').classList.remove('open')}
 async function saveNewItem(){
   const name=$('newItemName').value.trim(),unit=$('newItemType').value==='finished_product'?'packets':$('newItemUnit').value.trim();
   if(!name||!unit){message('itemModalMsg','Enter at least a name and a unit.');return}
-  const payload={name,item_type:$('newItemType').value,unit,current_qty:Number($('newItemQty').value)||0,reorder_level:Number($('newItemReorder').value)||0,cost_per_unit:Number($('newItemCost').value)||0,selling_price:Number($('newItemPrice').value)||0,active:true};
+  const payload={name,item_type:$('newItemType').value,unit,current_qty:Number($('newItemQty').value)||0,reorder_level:Number($('newItemReorder').value)||0,cost_per_unit:Number($('newItemCost').value)||0,active:true};if($('newItemType').value==='finished_product')payload.selling_price=Number($('newItemPrice').value)||0;
   try{const r=await db.from('inventory_items').insert(payload);if(r.error)throw r.error;await logActivity('Add Item','Inventory',{item:name,item_type:$('newItemType').value});toast('"'+name+'" added to inventory.');closeItemModal();await refresh()}
   catch(e){message('itemModalMsg',e.message||String(e))}
 }
