@@ -189,6 +189,7 @@ tbody tr:last-child td{border-bottom:0}
 <div class="table-wrap"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Qty</th><th>Reorder</th><th>Cost</th><th>Status</th><th></th></tr></thead><tbody id="rawRows"></tbody></table></div></div>
 <div class="card"><h2>Finished Products <span class="pill" id="finishedCount"></span></h2>
 <div class="table-wrap"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Qty</th><th>Reorder</th><th>Cost</th><th>Selling</th><th>Status</th><th></th></tr></thead><tbody id="finishedRows"></tbody></table></div></div>
+<div class="card" id="archivedInventoryCard" style="display:none"><div class="toolbar"><div><h2 style="margin:0">Recently removed items</h2><div class="mini">Removed items are kept safely in the database and can be restored by management.</div></div><button class="btn ghost small" id="refreshArchivedItems" type="button">↻ Refresh</button></div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Last quantity</th><th>Cost</th><th></th></tr></thead><tbody id="archivedRows"></tbody></table></div></div>
 </section>
 
 <section id="production" class="page">
@@ -444,8 +445,29 @@ function renderInventory(){
  const raw=a.filter(i=>i.item_type==='raw_material'), fin=a.filter(i=>i.item_type==='finished_product');
  $('rawRows').innerHTML=draw(raw,true)||'<tr><td colspan="8" class="empty">No raw materials found.</td></tr>';
  $('finishedRows').innerHTML=draw(fin,false)||'<tr><td colspan="9" class="empty">No finished products found.</td></tr>';
- $('rawCount').textContent=raw.length; $('finishedCount').textContent=fin.length;
+ $('rawCount').textContent=raw.length; $('finishedCount').textContent=fin.length; loadArchivedInventory();
 }
+async function loadArchivedInventory(){
+  if(!db||!profile||!['owner','admin','manager','ceo'].includes(String(profile.role||'').toLowerCase()))return;
+  const card=$('archivedInventoryCard'); if(card)card.style.display='block';
+  const r=await db.from('inventory_items').select('id,name,item_type,unit,current_qty,cost_per_unit').eq('active',false).order('name');
+  if(r.error){$('archivedRows').innerHTML='<tr><td colspan="6" class="empty">Could not load removed items.</td></tr>';return}
+  const rows=r.data||[];
+  $('archivedRows').innerHTML=rows.length?rows.map(i=>'<tr><td><b>'+esc(i.name)+'</b></td><td>'+esc(String(i.item_type||'').replace('_',' '))+'</td><td>'+esc(finishedDisplayUnit(i))+'</td><td>'+qtyFmt(i.current_qty)+'</td><td>'+money(i.cost_per_unit)+'</td><td><button class="icon-btn archived-restore" data-id="'+esc(i.id)+'">Restore</button></td></tr>').join(''):'<tr><td colspan="6" class="empty">No removed inventory items.</td></tr>';
+}
+window.restoreItem=async function(id){
+  if(!confirm('Restore this inventory item? It will become active again without changing its stored quantity, cost or history.'))return;
+  try{
+    const archived=await db.from('inventory_items').select('id,name').eq('id',id).eq('active',false).maybeSingle();
+    if(archived.error)throw archived.error; if(!archived.data)throw new Error('The item was not found or is already active.');
+    const r=await db.rpc('restore_inventory_item',{p_item_id:id});
+    if(r.error)throw r.error;
+    await logActivity('Restore Item','Inventory',{item_id:id,item:archived.data.name});
+    toast('"'+archived.data.name+'" restored to active inventory.');
+    await refresh();
+  }catch(e){toast(e.message||String(e),true)}
+}
+
 
 // Product-specific production specifications supplied for this bakery.
 // Base ingredients remain unchanged; these entries only split the bales into
@@ -661,10 +683,11 @@ async function saveNewItem(){
 // Recipe ingredients: link raw materials to a recipe (recipe_items) so a newly
 // added raw material actually gets deducted during production, instead of just
 // sitting in inventory unconnected to anything.
+function recipeDisplayName(r){const p=items.find(i=>i.id===r?.product_id);return p?.name||r?.name||'Unnamed recipe'}
 function openRecipeItemsModal(){
   $('recipeItemsModalMsg').innerHTML='';
   const cur=$('riRecipeSelect').value;
-  $('riRecipeSelect').innerHTML=recipes.length?recipes.map(r=>'<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>').join(''):'<option value="">No recipes found in Supabase</option>';
+  $('riRecipeSelect').innerHTML=recipes.length?recipes.map(r=>'<option value="'+esc(r.id)+'">'+esc(recipeDisplayName(r))+'</option>').join(''):'<option value="">No recipes found in Supabase</option>';
   if(cur&&[...$('riRecipeSelect').options].some(o=>o.value===cur))$('riRecipeSelect').value=cur;
   renderRecipeItemsRows();
   $('recipeItemsModal').classList.add('open');
@@ -796,39 +819,37 @@ function renderTrendChart(rows){
 }
 async function closeDay(){
  const day=$('closeDate').value;if(!day){message('closeMsg','Choose a date.');return}
+ if(day!==today()){
+   const existing=await db.from('daily_closing_snapshots').select('record_date').eq('record_date',day).maybeSingle();
+   if(existing.error){message('closeMsg',existing.error.message);return}
+   message('closeMsg',existing.data?'That date is already closed. Historical snapshots are not recalculated from today’s inventory.':'For safety, Close & Save Day can only create a new snapshot for today. Use Reports to view historical snapshots.');return
+ }
  try{
   const next=new Date(day+'T00:00:00Z');next.setUTCDate(next.getUTCDate()+1);const end=next.toISOString();
+  const prior=await db.from('daily_closing_snapshots').select('closing_inventory_value').lt('record_date',day).order('record_date',{ascending:false}).limit(1).maybeSingle();if(prior.error)throw prior.error;
   const [sales,purchases,expenses,waste,prod]=await Promise.all([
-   db.from('sales').select('total').gte('sale_date',day).lt('sale_date',end),
-   db.from('purchases').select('total').gte('purchase_date',day).lt('purchase_date',end),
-   db.from('expenses').select('amount').eq('expense_date',day),
-   db.from('wastage').select('item_id,quantity').gte('wastage_date',day).lt('wastage_date',end),
-   db.from('production_runs').select('id').gte('production_date',day).lt('production_date',end)
-  ]);
-  const results=[sales,purchases,expenses,waste,prod];const bad=results.find(x=>x.error);if(bad)throw bad.error;
-  const sv=(sales.data||[]).reduce((a,x)=>a+Number(x.total||0),0);
-  const pv=(purchases.data||[]).reduce((a,x)=>a+Number(x.total||0),0);
-  const ev=(expenses.data||[]).reduce((a,x)=>a+Number(x.amount||0),0);
-  const wv=(waste.data||[]).reduce((a,x)=>{const it=items.find(i=>i.id===x.item_id);return a+Number(x.quantity||0)*Number(it?.cost_per_unit||0)},0);
-  const iv=items.reduce((a,i)=>a+Number(i.current_qty||0)*Number(i.cost_per_unit||0),0);
-  const snap={record_date:day,user_id:user.id,opening_inventory_value:0,closing_inventory_value:iv,total_purchases:pv,total_sales:sv,total_wastage_value:wv,total_expenses:ev,production_count:(prod.data||[]).length,notes:$('closeNotes').value.trim(),snapshot_data:{closing_cash:Number($('closeCash').value)||0,inventory:items.map(i=>({id:i.id,name:i.name,qty:Number(i.current_qty||0),unit:i.unit}))}};
-  const r=await db.from('daily_closing_snapshots').upsert(snap,{onConflict:'record_date'});if(r.error)throw r.error;
-  await logActivity('Close Day','Reports',{date:day,closing_cash:Number($('closeCash').value)||0});message('closeMsg','Day '+day+' was saved to the cloud.',true);await loadSnapshots();
+   db.from('sales').select('total').gte('sale_date',day).lt('sale_date',end),db.from('purchases').select('total').gte('purchase_date',day).lt('purchase_date',end),db.from('expenses').select('amount').eq('expense_date',day),db.from('wastage').select('item_id,quantity').gte('wastage_date',day).lt('wastage_date',end),db.from('production_runs').select('id').gte('production_date',day).lt('production_date',end)
+  ]);const results=[sales,purchases,expenses,waste,prod];const bad=results.find(x=>x.error);if(bad)throw bad.error;
+  const sv=(sales.data||[]).reduce((a,x)=>a+Number(x.total||0),0),pv=(purchases.data||[]).reduce((a,x)=>a+Number(x.total||0),0),ev=(expenses.data||[]).reduce((a,x)=>a+Number(x.amount||0),0);
+  const wv=(waste.data||[]).reduce((a,x)=>{const it=items.find(i=>i.id===x.item_id);return a+Number(x.quantity||0)*Number(it?.cost_per_unit||0)},0),iv=items.reduce((a,i)=>a+Number(i.current_qty||0)*Number(i.cost_per_unit||0),0),opening=prior.data?Number(prior.data.closing_inventory_value||0):0;
+  const snap={record_date:day,user_id:user.id,opening_inventory_value:opening,closing_inventory_value:iv,total_purchases:pv,total_sales:sv,total_wastage_value:wv,total_expenses:ev,production_count:(prod.data||[]).length,notes:$('closeNotes').value.trim(),snapshot_data:{closing_cash:Number($('closeCash').value)||0,inventory:items.map(i=>({id:i.id,name:i.name,qty:Number(i.current_qty||0),unit:i.unit}))}};
+  const r=await db.from('daily_closing_snapshots').upsert(snap,{onConflict:'record_date'});if(r.error)throw r.error;await logActivity('Close Day','Reports',{date:day,closing_cash:Number($('closeCash').value)||0});message('closeMsg','Today '+day+' was saved to the cloud. Opening inventory value: '+money(opening)+'.',true);await loadSnapshots();
  }catch(e){message('closeMsg',e.message||String(e))}
 }
 
 async function assistantFetch(){
-  const [sales,purchases,expenses,production,waste,activity]=await Promise.all([
+  const [sales,purchases,expenses,production,waste,activity,dbAudit]=await Promise.all([
     db.from('sales').select('sale_date,total').order('sale_date',{ascending:false}).limit(2000),
     db.from('purchases').select('purchase_date,total').order('purchase_date',{ascending:false}).limit(2000),
     db.from('expenses').select('expense_date,amount,category,description').order('expense_date',{ascending:false}).limit(2000),
     db.from('production_runs').select('production_date,output_quantity,recipe_id,notes').order('production_date',{ascending:false}).limit(2000),
     db.from('wastage').select('wastage_date,item_id,quantity,reason').order('wastage_date',{ascending:false}).limit(2000),
-    db.from('activity_logs').select('created_at,user_id,action,section,details').order('created_at',{ascending:false}).limit(2000)
+    db.from('activity_logs').select('created_at,user_id,action,section,details').order('created_at',{ascending:false}).limit(2000),
+    db.from('activity_log').select('created_at,user_id,action,entity_type,entity_id,details,section').order('created_at',{ascending:false}).limit(2000)
   ]);
   const bad=[sales,purchases,expenses,production,waste,activity].find(x=>x.error);
   if(bad) throw bad.error;
-  return {sales:sales.data||[],purchases:purchases.data||[],expenses:expenses.data||[],production:production.data||[],waste:waste.data||[],activity:activity.data||[]};
+  return {sales:sales.data||[],purchases:purchases.data||[],expenses:expenses.data||[],production:production.data||[],waste:waste.data||[],activity:[...(activity.data||[]),...(dbAudit.data||[])].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,2000)};
 }
 function sumField(rows,key){return rows.reduce((a,x)=>a+Number(x[key]||0),0)}
 function dayAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().slice(0,10)}
@@ -862,7 +883,7 @@ async function runAssistant(q){
 }
 (function initBakeryName(){try{const saved=localStorage.getItem('bakeryName');if(saved)$('bakeryName').value=saved;document.title=($('bakeryName').value||'Bakery Inventory')+' — Cloud Bakery Management';}catch(e){}})();
 $('bakeryName').addEventListener('input',()=>{try{localStorage.setItem('bakeryName',$('bakeryName').value);document.title=($('bakeryName').value||'Bakery Inventory')+' — Cloud Bakery Management';}catch(e){}});
-$('loginBtn').onclick=login;$('signupBtn').onclick=signup;$('loginPassword').onkeydown=e=>{if(e.key==='Enter')login()};$('logoutBtn').onclick=()=>db.auth.signOut();$('invSearch').oninput=renderInventory;$('invType').onchange=renderInventory;$('addItemBtn').onclick=openItemModal;$('itemModalClose').onclick=closeItemModal;$('itemModalCancel').onclick=closeItemModal;$('itemModal').onclick=e=>{if(e.target.id==='itemModal')closeItemModal()};$('newItemSave').onclick=saveNewItem;$('newItemType').onchange=syncNewItemUnit;$('prodRecipe').onchange=()=>{actualYieldAuto=true;preview()};$('prodBatches').oninput=()=>{actualYieldAuto=true;preview()};document.querySelectorAll('.prod-bale-preset').forEach(btn=>btn.onclick=()=>{$('prodBatches').value=btn.dataset.bales;actualYieldAuto=true;preview()});$('prodActualYield').oninput=()=>{actualYieldAuto=false};$('produceBtn').onclick=produce;$('addPurchaseLine').onclick=()=>addLine('purchase');$('savePurchase').onclick=savePurchase;$('addSaleLine').onclick=()=>addLine('sale');$('saveSale').onclick=saveSale;$('addLabanSaleLine').onclick=()=>addLine('labansale');$('saveLabanSale').onclick=saveLabanSale;$('saveWaste').onclick=saveWaste;$('saveExpense').onclick=saveExpense;
+$('loginBtn').onclick=login;$('signupBtn').onclick=signup;$('loginPassword').onkeydown=e=>{if(e.key==='Enter')login()};$('logoutBtn').onclick=()=>db.auth.signOut();$('invSearch').oninput=renderInventory;$('invType').onchange=renderInventory;$('refreshArchivedItems').onclick=loadArchivedInventory;$('archivedRows').addEventListener('click',e=>{const b=e.target.closest('.archived-restore');if(b)restoreItem(b.dataset.id)});$('addItemBtn').onclick=openItemModal;$('itemModalClose').onclick=closeItemModal;$('itemModalCancel').onclick=closeItemModal;$('itemModal').onclick=e=>{if(e.target.id==='itemModal')closeItemModal()};$('newItemSave').onclick=saveNewItem;$('newItemType').onchange=syncNewItemUnit;$('prodRecipe').onchange=()=>{actualYieldAuto=true;preview()};$('prodBatches').oninput=()=>{actualYieldAuto=true;preview()};document.querySelectorAll('.prod-bale-preset').forEach(btn=>btn.onclick=()=>{$('prodBatches').value=btn.dataset.bales;actualYieldAuto=true;preview()});$('prodActualYield').oninput=()=>{actualYieldAuto=false};$('produceBtn').onclick=produce;$('addPurchaseLine').onclick=()=>addLine('purchase');$('savePurchase').onclick=savePurchase;$('addSaleLine').onclick=()=>addLine('sale');$('saveSale').onclick=saveSale;$('addLabanSaleLine').onclick=()=>addLine('labansale');$('saveLabanSale').onclick=saveLabanSale;$('saveWaste').onclick=saveWaste;$('saveExpense').onclick=saveExpense;
 $('addSupplierBtn').onclick=()=>openSupplierModal();
 $('quickAddSupplier').onclick=()=>openSupplierModal();
 $('supplierSearch').oninput=renderSuppliers;
