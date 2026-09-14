@@ -336,13 +336,40 @@ function message(id,t,ok){$(id).innerHTML=t?'<div class="'+(ok?'ok':'alert')+'">
 function toast(t,e){const d=document.createElement('div');d.className='toast'+(e?' err':'');d.textContent=t;d.style.cssText='position:fixed;right:14px;bottom:14px;z-index:300;background:#3b2a1d;border:1px solid '+(e?'#c15b4e':'rgba(243,232,214,.12)')+';padding:11px 14px;border-radius:6px;max-width:360px;font-size:.8rem';document.body.appendChild(d);setTimeout(()=>d.remove(),3500)}
 function sync(ok,t){$('syncDot').className='dot'+(ok?'':' err');$('syncText').textContent=t||(ok?'Connected':'Connection error')}
 function init(){if(!window.supabase){$('authMsg').textContent='Supabase could not load. Connect to the internet and reopen the file.';return false}db=window.supabase.createClient(URL,KEY);return true}
+let alarmAudioCtx=null;
+const ALERT_EMAIL='snjoroge8140@gmail.com';
+const HIGH_RISK_ACTIONS=new Set(['Remove Item','Remove Supplier','Restore Item','Wastage','Unauthorized Action','Permission Denied']);
+function playSecurityAlarm(){
+  try{
+    const C=window.AudioContext||window.webkitAudioContext; if(!C)return;
+    alarmAudioCtx=alarmAudioCtx||new C();
+    const now=alarmAudioCtx.currentTime;
+    [0,0.22,0.44].forEach((off,i)=>{
+      const o=alarmAudioCtx.createOscillator(),g=alarmAudioCtx.createGain();
+      o.type='sine';o.frequency.value=i%2?880:660;g.gain.setValueAtTime(0.0001,now+off);g.gain.exponentialRampToValueAtTime(0.18,now+off+0.02);g.gain.exponentialRampToValueAtTime(0.0001,now+off+0.16);o.connect(g).connect(alarmAudioCtx.destination);o.start(now+off);o.stop(now+off+0.17);
+    });
+  }catch(e){ console.warn('Security alarm unavailable',e); }
+}
+async function sendSecurityEmail(action,section,details){
+  try{
+    if(!db||!user)return;
+    const r=await db.functions.invoke('security-alert',{body:{recipient:ALERT_EMAIL,action:String(action),section:String(section||''),details:details||{},occurred_at:new Date().toISOString()}});
+    if(r.error)console.warn('Security email unavailable:',r.error.message||r.error);
+  }catch(e){ console.warn('Security email unavailable:',e); }
+}
+async function triggerSecurityAlarm(action,section,details){
+  if(!HIGH_RISK_ACTIONS.has(String(action)))return;
+  playSecurityAlarm();
+  toast('Security alert: '+String(action),true);
+  await sendSecurityEmail(action,section,details);
+}
 async function logActivity(action,section,details){
   try{
     if(!db||!user)return;
-    await db.from('activity_logs').insert({
-      user_id:user.id, action:String(action), section:String(section||''),
-      details:details||{}
-    });
+    const payload={user_id:user.id, action:String(action), section:String(section||''), details:details||{}};
+    const r=await db.from('activity_logs').insert(payload);
+    if(r.error)console.warn('Activity logging failed',r.error);
+    await triggerSecurityAlarm(action,section,details);
   }catch(e){ console.warn('Activity logging failed',e); }
 }
 let profileNameCache={};
@@ -392,14 +419,10 @@ window.loadActivity=async function loadActivity(){
     return '<tr><td>'+esc(dateFmt(x.created_at))+'</td><td>'+esc(who)+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.section)+'</td><td>'+esc(d)+'</td></tr>';
   }).join('')||'<tr><td colspan="5">No activity found.</td></tr>';
 }
-async function login(){const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!email||!password){$('authMsg').textContent='Enter your email and password.';return}$('loginBtn').disabled=true;$('authMsg').textContent='Connecting to Bakery Inventory…';try{const r=await db.auth.signInWithPassword({email,password});if(r.error)throw r.error;if(r.data?.user){
-  await db.from('activity_logs').insert({
-    user_id:r.data.user.id,
-    action:'Login',
-    section:'Authentication',
-    details:{email}
-  });
-}}catch(e){$('authMsg').textContent=e.message||String(e);$('loginBtn').disabled=false}}
+let failedLoginAttempts=0;
+async function login(){const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!email||!password){$('authMsg').textContent='Enter your email and password.';return}$('loginBtn').disabled=true;$('authMsg').textContent='Connecting to Bakery Inventory…';try{const r=await db.auth.signInWithPassword({email,password});if(r.error)throw r.error;failedLoginAttempts=0;if(r.data?.user){
+  await db.from('activity_logs').insert({user_id:r.data.user.id,action:'Login',section:'Authentication',details:{email}});
+}}catch(e){failedLoginAttempts++;$('authMsg').textContent=e.message||String(e);if(failedLoginAttempts>=3){playSecurityAlarm();toast('Security alert: 3 failed login attempts.',true);try{await db.from('activity_logs').insert({user_id:null,action:'Failed Login Threshold',section:'Authentication',details:{email,attempts:failedLoginAttempts}})}catch(_){}}$('loginBtn').disabled=false}}
 async function signup(){const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!email||password.length<6){$('authMsg').textContent='Enter a valid email and a password of at least 6 characters.';return}try{const r=await db.auth.signUp({email,password});if(r.error)throw r.error;$('authMsg').textContent=r.data.session?'Account created.':'Account created. Confirm your email if requested.'}catch(e){$('authMsg').textContent=e.message||String(e)}}
 async function start(session){user=session?.user;if(!user){$('app').style.display='none';$('auth').style.display='flex';return}try{const p=await db.from('profiles').select('*').eq('id',user.id).maybeSingle();if(p.error)throw p.error;profile=p.data;$('userChip').textContent=(profile?.full_name||user.email)+' · '+(profile?.role||'staff');$('auth').style.display='none';$('app').style.display='block';await refresh()}catch(e){$('authMsg').textContent='Signed in, but data could not load: '+e.message;sync(false)}}
 async function refresh(){try{let r=await db.from('inventory_items').select('*').eq('active',true).order('item_type').order('name');if(r.error)throw r.error;items=r.data||[];let [a,b,c]=await Promise.all([db.from('recipes').select('*').eq('active',true).order('name'),db.from('recipe_items').select('*,ingredient:inventory_items(id,name,unit)').order('id'),db.from('suppliers').select('*').eq('active',true).order('name')]);if(a.error)throw a.error;if(b.error)throw b.error;if(c.error)throw c.error;recipes=a.data||[];recipeItems=b.data||[];suppliers=c.data||[];renderInventory();renderSuppliers();renderSupplierSelect();renderDashboard();renderRecipes();selectors();await Promise.all([recentProduction(),recentPurchases(),recentSales(),recentWastage(),recentExpenses()]);await loadSnapshots();sync(true,'Synced just now')}catch(e){sync(false,'Connection error');toast(e.message||String(e),true)}}
