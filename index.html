@@ -589,13 +589,19 @@ function selectors(){
   document.querySelectorAll('.sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);return '<option value="'+i.id+'">'+esc(i.name)+' (packets'+(ppp?' · '+ppp+' pcs/packet':'')+')</option>'}).join('');s.value=v});
   document.querySelectorAll('.laban-sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);return '<option value="'+i.id+'">'+esc(i.name)+' (packets'+(ppp?' · '+ppp+' pcs/packet':'')+')</option>'}).join('');s.value=v});
 }
-function preview(){const r=recipes.find(x=>x.id===$('prodRecipe').value),b=Number($('prodBatches').value)||0;if(!r||b<=0){$('prodPreview').textContent='Select a recipe and number of batches to preview raw-material usage.';return}let rows=recipeItems.filter(x=>x.recipe_id===r.id);$('prodPreview').innerHTML='<b>Raw-material deduction for '+b+' batch(es):</b> '+rows.map(x=>esc(x.ingredient?.name||'')+': <b>'+qtyFmt(Number(x.quantity_per_output)*b)+'</b> '+esc(x.ingredient?.unit||'')).join(' · ')}
+const SAVED_PURCHASE_PRICE_KEY='bakery_saved_purchase_prices_v1';
+function getSavedPurchasePrices(){try{return JSON.parse(localStorage.getItem(SAVED_PURCHASE_PRICE_KEY)||'{}')}catch(_){return {}}}
+function getSavedPurchasePrice(itemId){const p=getSavedPurchasePrices()[itemId];return Number.isFinite(Number(p))&&Number(p)>=0?Number(p):null}
+function savePurchasePrice(itemId,price){if(!itemId||!Number.isFinite(Number(price))||Number(price)<0)return;const prices=getSavedPurchasePrices();prices[itemId]=Number(price);try{localStorage.setItem(SAVED_PURCHASE_PRICE_KEY,JSON.stringify(prices))}catch(_){} }
+function applySavedPurchasePrice(line){const sel=line.querySelector('.purchase-item');const input=line.querySelector('.line-price');if(!sel||!input)return;const saved=getSavedPurchasePrice(sel.value);if(saved!==null){input.value=saved;input.title='Last saved purchase price: '+saved}else{input.value='';input.title=''}}
+function wireSavedPurchasePrice(line){const sel=line.querySelector('.purchase-item');if(!sel)return;sel.addEventListener('change',()=>applySavedPurchasePrice(line));applySavedPurchasePrice(line)}
 function addLine(kind){
   const rootId=kind==='purchase'?'purchaseLines':(kind==='labansale'?'labanSaleLines':'saleLines');
   const cls=kind==='purchase'?'purchase-item':(kind==='labansale'?'laban-sale-item':'sale-item');
   const root=$(rootId);
   root.insertAdjacentHTML('beforeend','<div class="grid2 line"><select class="'+cls+'"></select><div class="grid2"><input class="line-qty" type="number" min=".001" step=".001" placeholder="Quantity"><input class="line-price" type="number" min="0" step=".01" placeholder="'+(kind==='purchase'?'Unit cost':'Unit price')+'"></div></div>');
-  selectors()
+  selectors();
+  const line=root.lastElementChild;if(kind==='purchase')wireSavedPurchasePrice(line);
 }
 async function savePurchase(){
   const supplierId=$('purSupplier').value;
@@ -606,6 +612,7 @@ async function savePurchase(){
   try{
     let r=await db.rpc('receive_purchase_with_supplier',{p_supplier_id:supplierId,p_supplier:supplierName,p_invoice_no:$('purInvoice').value.trim(),p_items:lines,p_notes:$('purNotes').value.trim()});
     if(r.error)throw r.error;
+    lines.forEach(x=>savePurchasePrice(x.item_id,x.unit_cost));
     await logActivity('Purchase','Purchases',{supplier:supplierName,invoice:$('purInvoice').value.trim(),line_count:lines.length});
     message('purchaseMsg','Purchase received successfully.',true);$('purchaseLines').innerHTML='';addLine('purchase');await refresh();
   }catch(e){message('purchaseMsg',e.message||String(e))}
@@ -760,7 +767,7 @@ function recipeForSpec(spec){
   })||null;
 }
 function expectedYieldForSpec(spec,batches){return spec?Number(spec.yield)*Number(batches||0):0;}
-preview=function(){
+function preview(){
   const spec=specForSelection(),b=Number($('prodBatches').value)||0,expected=expectedYieldForSpec(spec,b);
   if($('prodExpectedYield'))$('prodExpectedYield').value=expected>0?qtyFmt(expected):'';
   if($('prodActualYield')&&(actualYieldAuto||!$('prodActualYield').value)){$('prodActualYield').value=expected>0?qtyFmt(expected):'';actualYieldAuto=true;}
@@ -900,11 +907,7 @@ $('riRows').addEventListener('click',e=>{
   if(saveBtn)saveRecipeItemQty(saveBtn.dataset.id);
   if(removeBtn)removeRecipeItem(removeBtn.dataset.id);
 });
-document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(b.dataset.page).classList.add('active');$('addSupplierBtn').onclick=()=>openSupplierModal();
-$('quickAddSupplier').onclick=()=>openSupplierModal();
-$('supplierSearch').oninput=renderSuppliers;
-$('supplierModalClose').onclick=closeSupplierModal;$('supplierModalCancel').onclick=closeSupplierModal;
-$('supplierModal').onclick=e=>{if(e.target.id==='supplierModal')closeSupplierModal()};$('newSupplierSave').onclick=saveSupplier;
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(b.dataset.page).classList.add('active');
 document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active')});
 let currentReport={month:'',sales:0,purchases:0,expenses:0,cashMovement:0};
 async function loadMonthlyReport(){const m=$('reportMonth').value||today().slice(0,7),start=m+'-01',d=new Date(start+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+1);const end=d.toISOString(),rs=await Promise.all([db.from('sales').select('total,receipt_no,sale_date,notes').gte('sale_date',start).lt('sale_date',end).order('sale_date'),db.from('purchases').select('total,invoice_no,purchase_date').gte('purchase_date',start).lt('purchase_date',end).order('purchase_date'),db.from('expenses').select('amount,category,description,expense_date').gte('expense_date',start).lt('expense_date',end).order('expense_date')]);if(rs.some(x=>x.error)){toast('Could not load report.',true);return false}const sales=rs[0].data||[],purchases=rs[1].data||[],expenses=rs[2].data||[];const a=sales.reduce((s,x)=>s+Number(x.total||0),0),p=purchases.reduce((s,x)=>s+Number(x.total||0),0),e=expenses.reduce((s,x)=>s+Number(x.amount||0),0);currentReport={month:m,sales:a,purchases:p,expenses:e,cashMovement:a-p-e,salesRows:sales,purchaseRows:purchases,expenseRows:expenses};$('reportKpis').innerHTML=[[money(a),'Sales'],[money(p),'Purchases'],[money(e),'Expenses'],[money(a-p-e),'Cash movement']].map(x=>'<div class="kpi"><div class="big">'+esc(x[0])+'</div><div class="lbl">'+esc(x[1])+'</div></div>').join('');return true}
