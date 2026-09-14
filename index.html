@@ -304,7 +304,7 @@ tbody tr:last-child td{border-bottom:0}
 <div id="recipeItemsModalMsg"></div>
 <div class="mini" style="margin:-6px 0 13px">Choose a recipe, then link the raw materials it uses. The quantity is how much of that raw material is needed to make <b>one output unit</b> of the recipe (e.g. one packet) — it gets multiplied by the batch yield and bale count automatically during production.</div>
 <div class="form-grid" style="grid-template-columns:1fr">
-<div><label class="small">Recipe</label><select id="riRecipeSelect"></select></div>
+<div><label class="small">Finished product</label><select id="riRecipeSelect"></select></div>
 </div>
 <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Raw material</th><th>Qty per output unit</th><th>Unit</th><th></th></tr></thead><tbody id="riRows"></tbody></table></div>
 <div class="form-grid" style="grid-template-columns:2fr 1fr auto;margin-top:14px;align-items:end">
@@ -630,10 +630,14 @@ async function saveNewItem(){
 // Recipe ingredients: link raw materials to a recipe (recipe_items) so a newly
 // added raw material actually gets deducted during production, instead of just
 // sitting in inventory unconnected to anything.
+function recipeDisplayName(r){
+  const product=items.find(i=>i.id===r.product_id);
+  return product?.name || r.name || 'Unnamed recipe';
+}
 function openRecipeItemsModal(){
   $('recipeItemsModalMsg').innerHTML='';
   const cur=$('riRecipeSelect').value;
-  $('riRecipeSelect').innerHTML=recipes.length?recipes.map(r=>'<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>').join(''):'<option value="">No recipes found in Supabase</option>';
+  $('riRecipeSelect').innerHTML=recipes.length?recipes.map(r=>'<option value="'+esc(r.id)+'">'+esc(recipeDisplayName(r))+'</option>').join(''):'<option value="">No recipes found in Supabase</option>';
   if(cur&&[...$('riRecipeSelect').options].some(o=>o.value===cur))$('riRecipeSelect').value=cur;
   renderRecipeItemsRows();
   $('recipeItemsModal').classList.add('open');
