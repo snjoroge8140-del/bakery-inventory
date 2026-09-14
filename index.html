@@ -326,7 +326,7 @@ const $=id=>document.getElementById(id), money=n=>'KSh '+Number(n||0).toLocaleSt
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // Keep stock and ingredient quantities stable at the bakery's 0.001-unit precision; avoid floating-point artifacts such as 24.003.
 const qtyFmt=v=>{const n=Number(v);if(!Number.isFinite(n))return '0';return String(Math.round((n+Number.EPSILON)*1000)/1000);};
-const dateFmt=s=>s?new Date(s).toLocaleString('en-KE',{dateStyle:'short',timeStyle:'short'}):'—', today=()=>new Date().toISOString().slice(0,10);
+const dateFmt=s=>s?new Date(s).toLocaleString('en-KE',{dateStyle:'short',timeStyle:'short'}):'—', today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 function message(id,t,ok){$(id).innerHTML=t?'<div class="'+(ok?'ok':'alert')+'">'+esc(t)+'</div>':''}
 function toast(t,e){const d=document.createElement('div');d.className='toast'+(e?' err':'');d.textContent=t;d.style.cssText='position:fixed;right:14px;bottom:14px;z-index:300;background:#3b2a1d;border:1px solid '+(e?'#c15b4e':'rgba(243,232,214,.12)')+';padding:11px 14px;border-radius:6px;max-width:360px;font-size:.8rem';document.body.appendChild(d);setTimeout(()=>d.remove(),3500)}
 function sync(ok,t){$('syncDot').className='dot'+(ok?'':' err');$('syncText').textContent=t||(ok?'Connected':'Connection error')}
@@ -765,6 +765,8 @@ function renderTrendChart(rows){
 }
 async function closeDay(){
  const day=$('closeDate').value;if(!day){message('closeMsg','Choose a date.');return}
+ const currentDay=today();
+ if(day!==currentDay){message('closeMsg','Daily closing is limited to today. Historical closing cannot be reconstructed safely from the available stock-movement history.');return}
  try{
   const next=new Date(day+'T00:00:00Z');next.setUTCDate(next.getUTCDate()+1);const end=next.toISOString();
   const [sales,purchases,expenses,waste,prod]=await Promise.all([
@@ -780,7 +782,12 @@ async function closeDay(){
   const ev=(expenses.data||[]).reduce((a,x)=>a+Number(x.amount||0),0);
   const wv=(waste.data||[]).reduce((a,x)=>{const it=items.find(i=>i.id===x.item_id);return a+Number(x.quantity||0)*Number(it?.cost_per_unit||0)},0);
   const iv=items.reduce((a,i)=>a+Number(i.current_qty||0)*Number(i.cost_per_unit||0),0);
-  const snap={record_date:day,user_id:user.id,opening_inventory_value:0,closing_inventory_value:iv,total_purchases:pv,total_sales:sv,total_wastage_value:wv,total_expenses:ev,production_count:(prod.data||[]).length,notes:$('closeNotes').value.trim(),snapshot_data:{closing_cash:Number($('closeCash').value)||0,inventory:items.map(i=>({id:i.id,name:i.name,qty:Number(i.current_qty||0),unit:i.unit}))}};
+  const previousDay=new Date(day+'T00:00:00Z');previousDay.setUTCDate(previousDay.getUTCDate()-1);
+  const prevDate=previousDay.toISOString().slice(0,10);
+  const prevSnap=await db.from('daily_closing_snapshots').select('closing_inventory_value').eq('record_date',prevDate).maybeSingle();
+  if(prevSnap.error)throw prevSnap.error;
+  const openingValue=Number(prevSnap.data?.closing_inventory_value||0);
+  const snap={record_date:day,user_id:user.id,opening_inventory_value:openingValue,closing_inventory_value:iv,total_purchases:pv,total_sales:sv,total_wastage_value:wv,total_expenses:ev,production_count:(prod.data||[]).length,notes:$('closeNotes').value.trim(),snapshot_data:{closing_cash:Number($('closeCash').value)||0,inventory:items.map(i=>({id:i.id,name:i.name,qty:Number(i.current_qty||0),unit:i.unit,cost_per_unit:Number(i.cost_per_unit||0)}))}};
   const r=await db.from('daily_closing_snapshots').upsert(snap,{onConflict:'record_date'});if(r.error)throw r.error;
   await logActivity('Close Day','Reports',{date:day,closing_cash:Number($('closeCash').value)||0});message('closeMsg','Day '+day+' was saved to the cloud.',true);await loadSnapshots();
  }catch(e){message('closeMsg',e.message||String(e))}
