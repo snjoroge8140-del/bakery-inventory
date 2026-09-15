@@ -473,32 +473,32 @@ window.restoreItem=async function(id){
 // Base ingredients remain unchanged; these entries only split the bales into
 // the exact finished products/yields requested by the user.
 const PRODUCT_SPECS = [
-  {key:'cake_lemon_large', group:'Cakes', name:'Lemon cake large', base:'cake', yield:216, unit:'packets', piecesPerPacket:6,
-   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',null,'kg']]},
+  {key:'cake_lemon', group:'Cakes', name:'Lemon cakes', base:'cake', yield:315, unit:'packets', piecesPerPacket:6,
+   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',0.88,'kg']]},
   {key:'cake_queen8', group:'Cakes', name:'Queen cake — 8 pack', base:'cake', yield:232, unit:'packets', piecesPerPacket:8,
-   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',null,'kg']]},
+   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',0.88,'kg']]},
   {key:'cake_queen6', group:'Cakes', name:'Queen cake — 6 pack', base:'cake', yield:304, unit:'packets', piecesPerPacket:6,
-   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',null,'kg']]},
+   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',0.88,'kg']]},
   {key:'cake_muffin6', group:'Cakes', name:'Muffins — 6 pack', base:'cake', yield:184, unit:'packets', piecesPerPacket:6,
-   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',null,'kg']]},
+   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',0.88,'kg']]},
   {key:'cake_muffin4', group:'Cakes', name:'Muffins — 4 pack', base:'cake', yield:232, unit:'packets', piecesPerPacket:4,
-   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',null,'kg']]},
+   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',0.88,'kg']]},
   {key:'cake_marble', group:'Cakes', name:'Marble slice', base:'cake', yield:240, unit:'packets', piecesPerPacket:1,
-   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',null,'kg']]},
+   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',0.88,'kg']]},
   {key:'cake_heart_large', group:'Cakes', name:'Heart large', base:'cake', yield:96, unit:'packets', piecesPerPacket:1,
-   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',null,'kg']]},
+   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',0.88,'kg']]},
   {key:'cake_emka_heart', group:'Cakes', name:'EMKA heart', base:'cake', yield:172, unit:'packets', piecesPerPacket:1,
-   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',null,'kg']]},
+   ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',4,'kg'],['Cooking oil',4,'L'],['Sugar',10.8,'kg'],['Eggs',200,'pcs'],['Baking powder',0.88,'kg']]},
 
   {key:'cookie', group:'Cookies', name:'Cookies', base:'cookie', yield:252, unit:'packets', piecesPerPacket:12,
    ingredients:[['Ndovu (wheat flour)',24,'kg'],['Prestige',5.4,'kg'],['Fat',6,'kg'],['Sugar',10.8,'kg']]},
 
   {key:'bun_honey', group:'Buns', name:'Honey buns', base:'bun', yield:108, unit:'packets', piecesPerPacket:6,
-   ingredients:[['Pembe (wheat flour)',24,'kg'],['Fat',1.2,'kg'],['Sugar',3.75,'kg'],['Yeast',0.28,'kg'],['Improver',0.24,'kg'],['Salt',0.2,'kg'],['Baking',0.08,'kg']]},
+   ingredients:[['Pembe (wheat flour)',24,'kg'],['Fat',1.2,'kg'],['Sugar',3.75,'kg'],['Yeast',0.28,'kg'],['Improver',0.24,'kg'],['Salt',0.2,'kg'],['Baking powder',0.08,'kg']]},
   {key:'bun_jam', group:'Buns', name:'Jam bun', base:'bun', yield:120, unit:'packets', piecesPerPacket:6,
-   ingredients:[['Pembe (wheat flour)',24,'kg'],['Fat',1.2,'kg'],['Sugar',3.75,'kg'],['Yeast',0.28,'kg'],['Improver',0.24,'kg'],['Salt',0.2,'kg'],['Baking',0.08,'kg']]},
+   ingredients:[['Pembe (wheat flour)',24,'kg'],['Fat',1.2,'kg'],['Sugar',3.75,'kg'],['Yeast',0.28,'kg'],['Improver',0.24,'kg'],['Salt',0.2,'kg'],['Baking powder',0.08,'kg']]},
   {key:'bun_round', group:'Buns', name:'Round bun', base:'bun', yield:96, unit:'packets', piecesPerPacket:6,
-   ingredients:[['Pembe (wheat flour)',24,'kg'],['Fat',1.2,'kg'],['Sugar',3.75,'kg'],['Yeast',0.28,'kg'],['Improver',0.24,'kg'],['Salt',0.2,'kg'],['Baking',0.08,'kg']]}
+   ingredients:[['Pembe (wheat flour)',24,'kg'],['Fat',1.2,'kg'],['Sugar',3.75,'kg'],['Yeast',0.28,'kg'],['Improver',0.24,'kg'],['Salt',0.2,'kg'],['Baking powder',0.08,'kg']]}
 ];
 const BASE_GROUP_LABELS={cake:'Cake bale',cookie:'Cookie bale',bun:'Bun bale'};
 const EGGS_PER_TRAY=30;
