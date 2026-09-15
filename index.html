@@ -824,10 +824,11 @@ async function produce(){
 
 async function loadSnapshots(){
  if(!db||!user)return;
- const r=await db.from('daily_closing_snapshots').select('*').order('record_date',{ascending:false}).limit(31);
+ const r=await db.rpc('get_daily_closing_snapshots');
  if(r.error){$('snapshotRows').innerHTML='<tr><td colspan="7" class="empty">No cloud snapshots available yet.</td></tr>';renderTrendChart([]);return}
- $('snapshotRows').innerHTML=(r.data||[]).map(x=>'<tr><td>'+esc(x.record_date)+'</td><td>'+money(x.total_sales)+'</td><td>'+money(x.total_purchases)+'</td><td>'+money(x.total_expenses)+'</td><td>'+money(x.total_wastage_value)+'</td><td>'+money(x.closing_inventory_value)+'</td><td><span class="pill good">Saved ✓</span></td></tr>').join('')||'<tr><td colspan="7" class="empty">No daily snapshots yet.</td></tr>';
- renderTrendChart(r.data||[]);
+ const rows=Array.isArray(r.data)?r.data:[];
+ $('snapshotRows').innerHTML=rows.map(x=>'<tr><td>'+esc(x.record_date)+'</td><td>'+money(x.total_sales)+'</td><td>'+money(x.total_purchases)+'</td><td>'+money(x.total_expenses)+'</td><td>'+money(x.total_wastage_value)+'</td><td>'+money(x.closing_inventory_value)+'</td><td><span class="pill good">Saved ✓</span></td></tr>').join('')||'<tr><td colspan="7" class="empty">No daily snapshots yet.</td></tr>';
+ renderTrendChart(rows);
 }
 function renderTrendChart(rows){
  const el=$('trendChart');if(!el)return;
@@ -938,7 +939,7 @@ function downloadReportPdf(){if(!ensureReportLoaded()){toast('Load the report fi
 function printReport(){if(!ensureReportLoaded()){toast('Load the report first.',true);return}window.print()}
 function exportReportCsv(){if(!ensureReportLoaded()){toast('Load the report first.',true);return}const rows=[['Bakery Monthly Report',currentReport.month],[],['Metric','Amount'],['Sales',currentReport.sales],['Purchases',currentReport.purchases],['Expenses',currentReport.expenses],['Cash movement',currentReport.cashMovement],[],['Sales transactions','Date','Receipt','Total'],...currentReport.salesRows.map(r=>['Sale',r.sale_date,r.receipt_no||'',r.total]),[],['Purchase transactions','Date','Invoice','Total'],...currentReport.purchaseRows.map(r=>['Purchase',r.purchase_date,r.invoice_no||'',r.total]),[],['Expense transactions','Date','Category','Description','Amount'],...currentReport.expenseRows.map(r=>['Expense',r.expense_date,r.category||'',r.description||'',r.amount])];const csv='\ufeff'+rows.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');const filename='Bakery_Report_'+currentReport.month+'.csv';try{const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);toast('CSV downloaded.',false)}catch(e){try{const dataUrl='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);const w=window.open(dataUrl,'_blank');if(!w)throw e;toast('CSV opened. Use your browser menu to download it.',false)}catch(_){toast('Could not create CSV on this device.',true)}}}
 $('downloadReportPdf').onclick=downloadReportPdf;$('printReport').onclick=printReport;$('exportReportCsv').onclick=exportReportCsv;async function resetDemoData2FA(){
-  if(!user || !['management','manager','admin','owner','ceo'].includes(String(user.role||'').toLowerCase())){toast('Management access required.',true);return}
+  if(!user || !['management','manager','admin','owner','ceo'].includes(String(profile?.role||'').toLowerCase())){toast('Management access required.',true);return}
   const typed=prompt('RESET DEMO DATA\n\nThis permanently removes demo purchases, sales, production, wastage, expenses, daily records and stock movements, and resets inventory quantities to zero. Products, recipes, suppliers and users are kept.\n\nType RESET to continue:');
   if(typed!=='RESET'){if(typed!==null)toast('Reset cancelled.',false);return}
   const first=confirm('Final warning: this will permanently remove the demo transaction figures and reset stock. Continue?');
