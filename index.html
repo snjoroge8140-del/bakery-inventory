@@ -237,10 +237,10 @@ tbody tr:last-child td{border-bottom:0}
 <section id="sales" class="page">
 <div class="card"><h2>Sales overview</h2><div class="mini" style="margin:-4px 0 10px">Bakery sales (sold on premises) and Laban sales (distributed off-site by Laban) — same finished products, recorded separately below, both add up into the combined total.</div><div class="grid" id="salesSummaryKpis"></div></div>
 
-<div class="card"><h2>Record Bakery sale</h2><div id="saleMsg"></div><div class="form-grid"><div><label class="small">Receipt no.</label><input id="saleReceipt"></div><div><label class="small">Notes</label><input id="saleNotes"></div></div><div id="saleLines"></div><button class="btn ghost small" id="addSaleLine">+ Add item</button> <button class="btn" id="saveSale">Record Bakery sale</button></div>
+<div class="card"><h2>Record Bakery sale</h2><div id="saleMsg"></div><div class="small muted" style="margin-bottom:10px">The product has a default selling price, but you can enter a different selling price for this customer/sale.</div><div class="form-grid"><div><label class="small">Receipt no.</label><input id="saleReceipt"></div><div><label class="small">Notes</label><input id="saleNotes"></div></div><div id="saleLines"></div><button class="btn ghost small" id="addSaleLine">+ Add item</button> <button class="btn" id="saveSale">Record Bakery sale</button></div>
 <div class="card"><h2>Recent Bakery sales</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Receipt</th><th>Finished product(s)</th><th>Qty</th><th>Total</th></tr></thead><tbody id="saleRows"></tbody></table></div></div>
 
-<div class="card"><h2>Record Laban sale</h2><div id="labanSaleMsg"></div><div class="form-grid"><div><label class="small">Receipt no.</label><input id="labanSaleReceipt"></div><div><label class="small">Notes</label><input id="labanSaleNotes"></div></div><div id="labanSaleLines"></div><button class="btn ghost small" id="addLabanSaleLine">+ Add item</button> <button class="btn" id="saveLabanSale">Record Laban sale</button></div>
+<div class="card"><h2>Record Laban sale</h2><div id="labanSaleMsg"></div><div class="small muted" style="margin-bottom:10px">The product has a default selling price, but you can enter a different selling price for this customer/sale.</div><div class="form-grid"><div><label class="small">Receipt no.</label><input id="labanSaleReceipt"></div><div><label class="small">Notes</label><input id="labanSaleNotes"></div></div><div id="labanSaleLines"></div><button class="btn ghost small" id="addLabanSaleLine">+ Add item</button> <button class="btn" id="saveLabanSale">Record Laban sale</button></div>
 <div class="card"><h2>Recent Laban sales</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Receipt</th><th>Finished product(s)</th><th>Qty</th><th>Total</th></tr></thead><tbody id="labanSaleRows"></tbody></table></div></div>
 </section>
 
@@ -588,8 +588,8 @@ function selectors(){
   const fin=items.filter(i=>i.item_type==='finished_product'&&!isHiddenFinishedProduct(i));
   $('wasteItem').innerHTML='<option value="">Select item</option>'+items.filter(i=>!isHiddenFinishedProduct(i)).map(i=>{const ppp=pieceInfoForItem(i);return '<option value="'+i.id+'">'+esc(i.name)+' ('+esc(finishedDisplayUnit(i))+(ppp?' · '+ppp+' pcs/packet':'')+')</option>'}).join('');
   document.querySelectorAll('.purchase-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select raw material</option>'+raw.map(i=>'<option value="'+i.id+'">'+esc(i.name)+' ('+esc(i.unit)+')</option>').join('');s.value=v});
-  document.querySelectorAll('.sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select specific finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);const price=Number(i.selling_price||0);return '<option value="'+i.id+'" data-selling-price="'+price+'">'+esc(i.name)+' ('+esc(finishedDisplayUnit(i))+(ppp?' · '+ppp+' pcs/packet':'')+(price?' · '+money(price)+'/packet':'')+')</option>'}).join('');s.value=v});
-  document.querySelectorAll('.laban-sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select specific finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);const price=Number(i.selling_price||0);return '<option value="'+i.id+'" data-selling-price="'+price+'">'+esc(i.name)+' ('+esc(finishedDisplayUnit(i))+(ppp?' · '+ppp+' pcs/packet':'')+(price?' · '+money(price)+'/packet':'')+')</option>'}).join('');s.value=v});
+  document.querySelectorAll('.sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select specific finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);const price=Number(i.selling_price||0);return '<option value="'+i.id+'" data-selling-price="'+price+'">'+esc(i.name)+' ('+esc(finishedDisplayUnit(i))+(ppp?' · '+ppp+' pcs/packet':'')+(price?' · Default '+money(price)+'/packet':'')+')</option>'}).join('');s.value=v});
+  document.querySelectorAll('.laban-sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select specific finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);const price=Number(i.selling_price||0);return '<option value="'+i.id+'" data-selling-price="'+price+'">'+esc(i.name)+' ('+esc(finishedDisplayUnit(i))+(ppp?' · '+ppp+' pcs/packet':'')+(price?' · Default '+money(price)+'/packet':'')+')</option>'}).join('');s.value=v});
 }
 const SAVED_PURCHASE_PRICE_KEY='bakery_saved_purchase_prices_v1';
 function getSavedPurchasePrices(){try{return JSON.parse(localStorage.getItem(SAVED_PURCHASE_PRICE_KEY)||'{}')}catch(_){return {}}}
@@ -601,7 +601,7 @@ function addLine(kind){
   const rootId=kind==='purchase'?'purchaseLines':(kind==='labansale'?'labanSaleLines':'saleLines');
   const cls=kind==='purchase'?'purchase-item':(kind==='labansale'?'laban-sale-item':'sale-item');
   const root=$(rootId);
-  root.insertAdjacentHTML('beforeend','<div class="grid2 line"><select class="'+cls+'"></select><div class="grid2"><input class="line-qty" type="number" min=".001" step=".001" placeholder="Quantity"><input class="line-price" type="number" min="0" step=".01" placeholder="'+(kind==='purchase'?'Unit cost':'Unit price')+'"></div></div>');
+  root.insertAdjacentHTML('beforeend','<div class="grid2 line"><select class="'+cls+'"></select><div class="grid2"><input class="line-qty" type="number" min=".001" step=".001" placeholder="Quantity"><input class="line-price" type="number" min="0" step=".01" placeholder="'+(kind==='purchase'?'Unit cost':'Selling price — can vary')+'"></div></div>');
   selectors();
   const line=root.lastElementChild;
   if(kind==='purchase') wireSavedPurchasePrice(line);
@@ -848,7 +848,9 @@ function renderTrendChart(rows){
 async function closeDay(){
  const day=$('closeDate').value;if(!day){message('closeMsg','Choose a date.');return}
  if(day!==today()){
-   message('closeMsg','For safety, Close & Save Day can only create a new snapshot for today. Use Reports to view historical snapshots.');return
+   const context=await db.rpc('get_close_day_context',{p_date:day});
+   if(context.error){message('closeMsg',context.error.message);return}
+   message('closeMsg',context.data?.already_closed?'That date is already closed. Historical snapshots are not recalculated from today’s inventory.':'For safety, Close & Save Day can only create a new snapshot for today. Use Reports to view historical snapshots.');return
  }
  try{
   const next=new Date(day+'T00:00:00Z');next.setUTCDate(next.getUTCDate()+1);const end=next.toISOString();
