@@ -238,10 +238,10 @@ tbody tr:last-child td{border-bottom:0}
 <div class="card"><h2>Sales overview</h2><div class="mini" style="margin:-4px 0 10px">Bakery sales (sold on premises) and Laban sales (distributed off-site by Laban) — same finished products, recorded separately below, both add up into the combined total.</div><div class="grid" id="salesSummaryKpis"></div></div>
 
 <div class="card"><h2>Record Bakery sale</h2><div id="saleMsg"></div><div class="form-grid"><div><label class="small">Receipt no.</label><input id="saleReceipt"></div><div><label class="small">Notes</label><input id="saleNotes"></div></div><div id="saleLines"></div><button class="btn ghost small" id="addSaleLine">+ Add item</button> <button class="btn" id="saveSale">Record Bakery sale</button></div>
-<div class="card"><h2>Recent Bakery sales</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Receipt</th><th>Total</th></tr></thead><tbody id="saleRows"></tbody></table></div></div>
+<div class="card"><h2>Recent Bakery sales</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Receipt</th><th>Finished product(s)</th><th>Qty</th><th>Total</th></tr></thead><tbody id="saleRows"></tbody></table></div></div>
 
 <div class="card"><h2>Record Laban sale</h2><div id="labanSaleMsg"></div><div class="form-grid"><div><label class="small">Receipt no.</label><input id="labanSaleReceipt"></div><div><label class="small">Notes</label><input id="labanSaleNotes"></div></div><div id="labanSaleLines"></div><button class="btn ghost small" id="addLabanSaleLine">+ Add item</button> <button class="btn" id="saveLabanSale">Record Laban sale</button></div>
-<div class="card"><h2>Recent Laban sales</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Receipt</th><th>Total</th></tr></thead><tbody id="labanSaleRows"></tbody></table></div></div>
+<div class="card"><h2>Recent Laban sales</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Receipt</th><th>Finished product(s)</th><th>Qty</th><th>Total</th></tr></thead><tbody id="labanSaleRows"></tbody></table></div></div>
 </section>
 
 <section id="wastage" class="page"><div class="card"><h2>Record wastage</h2><div id="wasteMsg"></div><div class="form-grid"><div><label class="small">Item</label><select id="wasteItem"></select></div><div><label class="small">Quantity</label><input id="wasteQty" type="number" min="0.001" step="0.001"></div><div><label class="small">Reason</label><input id="wasteReason" placeholder="Expired, damaged, burnt…"></div></div><button class="btn" id="saveWaste">Record wastage</button></div><div class="card"><h2>Recent wastage</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Reason</th></tr></thead><tbody id="wasteRows"></tbody></table></div></div></section>
@@ -588,8 +588,8 @@ function selectors(){
   const fin=items.filter(i=>i.item_type==='finished_product'&&!isHiddenFinishedProduct(i));
   $('wasteItem').innerHTML='<option value="">Select item</option>'+items.filter(i=>!isHiddenFinishedProduct(i)).map(i=>{const ppp=pieceInfoForItem(i);return '<option value="'+i.id+'">'+esc(i.name)+' ('+esc(finishedDisplayUnit(i))+(ppp?' · '+ppp+' pcs/packet':'')+')</option>'}).join('');
   document.querySelectorAll('.purchase-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select raw material</option>'+raw.map(i=>'<option value="'+i.id+'">'+esc(i.name)+' ('+esc(i.unit)+')</option>').join('');s.value=v});
-  document.querySelectorAll('.sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);return '<option value="'+i.id+'">'+esc(i.name)+' (packets'+(ppp?' · '+ppp+' pcs/packet':'')+')</option>'}).join('');s.value=v});
-  document.querySelectorAll('.laban-sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);return '<option value="'+i.id+'">'+esc(i.name)+' (packets'+(ppp?' · '+ppp+' pcs/packet':'')+')</option>'}).join('');s.value=v});
+  document.querySelectorAll('.sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select specific finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);const price=Number(i.selling_price||0);return '<option value="'+i.id+'" data-selling-price="'+price+'">'+esc(i.name)+' ('+esc(finishedDisplayUnit(i))+(ppp?' · '+ppp+' pcs/packet':'')+(price?' · '+money(price)+'/packet':'')+')</option>'}).join('');s.value=v});
+  document.querySelectorAll('.laban-sale-item').forEach(s=>{let v=s.value;s.innerHTML='<option value="">Select specific finished product</option>'+fin.map(i=>{const ppp=pieceInfoForItem(i);const price=Number(i.selling_price||0);return '<option value="'+i.id+'" data-selling-price="'+price+'">'+esc(i.name)+' ('+esc(finishedDisplayUnit(i))+(ppp?' · '+ppp+' pcs/packet':'')+(price?' · '+money(price)+'/packet':'')+')</option>'}).join('');s.value=v});
 }
 const SAVED_PURCHASE_PRICE_KEY='bakery_saved_purchase_prices_v1';
 function getSavedPurchasePrices(){try{return JSON.parse(localStorage.getItem(SAVED_PURCHASE_PRICE_KEY)||'{}')}catch(_){return {}}}
@@ -603,7 +603,13 @@ function addLine(kind){
   const root=$(rootId);
   root.insertAdjacentHTML('beforeend','<div class="grid2 line"><select class="'+cls+'"></select><div class="grid2"><input class="line-qty" type="number" min=".001" step=".001" placeholder="Quantity"><input class="line-price" type="number" min="0" step=".01" placeholder="'+(kind==='purchase'?'Unit cost':'Unit price')+'"></div></div>');
   selectors();
-  const line=root.lastElementChild;if(kind==='purchase')wireSavedPurchasePrice(line);
+  const line=root.lastElementChild;
+  if(kind==='purchase') wireSavedPurchasePrice(line);
+  else {
+    const sel=line.querySelector(kind==='labansale'?'.laban-sale-item':'.sale-item');
+    const price=line.querySelector('.line-price');
+    if(sel&&price) sel.addEventListener('change',()=>{const opt=sel.options[sel.selectedIndex];if(opt?.dataset?.sellingPrice) price.value=opt.dataset.sellingPrice;});
+  }
 }
 async function savePurchase(){
   const supplierId=$('purSupplier').value;
@@ -648,14 +654,27 @@ async function recentProduction(){let r=await db.from('production_runs').select(
 async function recentPurchases(){let r=await db.from('purchases').select('*,suppliers(name)').order('purchase_date',{ascending:false}).limit(12);if(r.error)return;$('purchaseRows').innerHTML=(r.data||[]).map(x=>'<tr><td>'+dateFmt(x.purchase_date)+'</td><td>'+esc(x.suppliers?.name||x.supplier||'')+'</td><td>'+esc(x.invoice_no||'')+'</td><td>'+money(x.total)+'</td></tr>').join('')||'<tr><td colspan="4" class="empty">No purchases yet.</td></tr>'}
 function isLabanSaleRow(x){return /^\[Laban\]\s*/i.test(String(x?.notes||''));}
 async function recentSales(){
-  let r=await db.from('sales').select('sale_date,receipt_no,total,notes').order('sale_date',{ascending:false}).limit(2000);
+  let r=await db.from('sales').select('id,sale_date,receipt_no,total,notes').order('sale_date',{ascending:false}).limit(2000);
   if(r.error)return;
   const rows=r.data||[];
+  const ids=rows.map(x=>x.id).filter(Boolean);
+  let itemRows=[];
+  if(ids.length){
+    const ir=await db.from('sale_items').select('sale_id,item_id,quantity,unit_price,line_total,inventory_items(name)').in('sale_id',ids);
+    if(!ir.error)itemRows=ir.data||[];
+  }
+  const bySale={};
+  itemRows.forEach(x=>{(bySale[x.sale_id]??=[]).push(x)});
   const bakeryRows=rows.filter(x=>!isLabanSaleRow(x));
   const labanRows=rows.filter(isLabanSaleRow);
-  const draw=arr=>arr.slice(0,12).map(x=>'<tr><td>'+dateFmt(x.sale_date)+'</td><td>'+esc(x.receipt_no||'')+'</td><td>'+money(x.total)+'</td></tr>').join('');
-  $('saleRows').innerHTML=draw(bakeryRows)||'<tr><td colspan="3" class="empty">No Bakery sales yet.</td></tr>';
-  $('labanSaleRows').innerHTML=draw(labanRows)||'<tr><td colspan="3" class="empty">No Laban sales yet.</td></tr>';
+  const draw=arr=>arr.slice(0,12).map(x=>{
+    const lines=bySale[x.id]||[];
+    const names=lines.map(l=>esc(l.inventory_items?.name||'Unknown product')).join('<br>')||'—';
+    const qty=lines.map(l=>qtyFmt(l.quantity)).join('<br>')||'—';
+    return '<tr><td>'+dateFmt(x.sale_date)+'</td><td>'+esc(x.receipt_no||'')+'</td><td>'+names+'</td><td>'+qty+'</td><td>'+money(x.total)+'</td></tr>';
+  }).join('');
+  $('saleRows').innerHTML=draw(bakeryRows)||'<tr><td colspan="5" class="empty">No Bakery sales yet.</td></tr>';
+  $('labanSaleRows').innerHTML=draw(labanRows)||'<tr><td colspan="5" class="empty">No Laban sales yet.</td></tr>';
   const bakeryTotal=bakeryRows.reduce((a,x)=>a+Number(x.total||0),0);
   const labanTotal=labanRows.reduce((a,x)=>a+Number(x.total||0),0);
   $('salesSummaryKpis').innerHTML=[[money(bakeryTotal),'Bakery sales (all-time)'],[money(labanTotal),'Laban sales (all-time)'],[money(bakeryTotal+labanTotal),'Combined total sales']].map(x=>'<div class="kpi"><div class="big">'+esc(x[0])+'</div><div class="lbl">'+esc(x[1])+'</div></div>').join('');
