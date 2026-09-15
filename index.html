@@ -186,9 +186,9 @@ tbody tr:last-child td{border-bottom:0}
 <button class="btn" id="addItemBtn">+ Add item</button>
 </div></div>
 <div class="card"><h2>Raw Materials <span class="pill" id="rawCount"></span></h2>
-<div class="table-wrap"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Qty</th><th>Reorder</th><th>Cost</th><th>Status</th><th></th></tr></thead><tbody id="rawRows"></tbody></table></div></div>
+<div class="table-wrap"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Qty</th><th>Reorder</th><th>Cost</th><th>Total Cost</th><th>Status</th><th></th></tr></thead><tbody id="rawRows"></tbody></table></div></div>
 <div class="card"><h2>Finished Products <span class="pill" id="finishedCount"></span></h2>
-<div class="table-wrap"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Qty</th><th>Reorder</th><th>Cost</th><th>Selling</th><th>Status</th><th></th></tr></thead><tbody id="finishedRows"></tbody></table></div></div>
+<div class="table-wrap"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Qty</th><th>Reorder</th><th>Cost</th><th>Total Cost</th><th>Selling</th><th>Status</th><th></th></tr></thead><tbody id="finishedRows"></tbody></table></div></div>
 <div class="card" id="archivedInventoryCard" style="display:none"><div class="toolbar"><div><h2 style="margin:0">Recently removed items</h2><div class="mini">Removed items are kept safely in the database and can be restored by management.</div></div><button class="btn ghost small" id="refreshArchivedItems" type="button">↻ Refresh</button></div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Item</th><th>Type</th><th>Unit</th><th>Last quantity</th><th>Cost</th><th></th></tr></thead><tbody id="archivedRows"></tbody></table></div></div>
 </section>
 
@@ -441,10 +441,10 @@ function renderDashboard(){const raw=items.filter(i=>i.item_type==='raw_material
 function renderInventory(){
  const q=($('invSearch').value||'').toLowerCase(), t=$('invType').value;
  const a=items.filter(i=>(!q||i.name.toLowerCase().includes(q))&&(!t||i.item_type===t)&&!isHiddenFinishedProduct(i));
- const draw=(arr,isRaw)=>arr.map(i=>{let s=stat(i);return '<tr><td><b>'+esc(i.name)+'</b></td><td>'+esc(i.item_type.replace('_',' '))+'</td><td>'+esc(finishedDisplayUnit(i))+'</td><td>'+qtyFmt(i.current_qty)+'</td><td>'+qtyFmt(i.reorder_level)+'</td><td>'+money(i.cost_per_unit)+'</td>'+(isRaw?'':'<td>'+money(i.selling_price)+'</td>')+'<td><span class="pill '+s[0]+'">'+s[1]+'</span></td><td style="white-space:nowrap"><button class="icon-btn" onclick="editItem(\''+i.id+'\')">Edit</button> <button class="icon-btn" onclick="deactivateItem(\''+i.id+'\')">Remove</button></td></tr>'}).join('');
+ const draw=(arr,isRaw)=>arr.map(i=>{let s=stat(i),totalCost=Number(i.current_qty||0)*Number(i.cost_per_unit||0);return '<tr><td><b>'+esc(i.name)+'</b></td><td>'+esc(i.item_type.replace('_',' '))+'</td><td>'+esc(finishedDisplayUnit(i))+'</td><td>'+qtyFmt(i.current_qty)+'</td><td>'+qtyFmt(i.reorder_level)+'</td><td>'+money(i.cost_per_unit)+'</td><td>'+money(totalCost)+'</td>'+(isRaw?'':'<td>'+money(i.selling_price)+'</td>')+'<td><span class="pill '+s[0]+'">'+s[1]+'</span></td><td style="white-space:nowrap"><button class="icon-btn" onclick="editItem(\''+i.id+'\')">Edit</button> <button class="icon-btn" onclick="deactivateItem(\''+i.id+'\')">Remove</button></td></tr>'}).join('');
  const raw=a.filter(i=>i.item_type==='raw_material'), fin=a.filter(i=>i.item_type==='finished_product');
- $('rawRows').innerHTML=draw(raw,true)||'<tr><td colspan="8" class="empty">No raw materials found.</td></tr>';
- $('finishedRows').innerHTML=draw(fin,false)||'<tr><td colspan="9" class="empty">No finished products found.</td></tr>';
+ $('rawRows').innerHTML=draw(raw,true)||'<tr><td colspan="9" class="empty">No raw materials found.</td></tr>';
+ $('finishedRows').innerHTML=draw(fin,false)||'<tr><td colspan="10" class="empty">No finished products found.</td></tr>';
  $('rawCount').textContent=raw.length; $('finishedCount').textContent=fin.length; loadArchivedInventory();
 }
 async function loadArchivedInventory(){
