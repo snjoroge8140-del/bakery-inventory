@@ -848,20 +848,18 @@ function renderTrendChart(rows){
 async function closeDay(){
  const day=$('closeDate').value;if(!day){message('closeMsg','Choose a date.');return}
  if(day!==today()){
-   const existing=await db.from('daily_closing_snapshots').select('record_date').eq('record_date',day).maybeSingle();
-   if(existing.error){message('closeMsg',existing.error.message);return}
-   message('closeMsg',existing.data?'That date is already closed. Historical snapshots are not recalculated from today’s inventory.':'For safety, Close & Save Day can only create a new snapshot for today. Use Reports to view historical snapshots.');return
+   message('closeMsg','For safety, Close & Save Day can only create a new snapshot for today. Use Reports to view historical snapshots.');return
  }
  try{
   const next=new Date(day+'T00:00:00Z');next.setUTCDate(next.getUTCDate()+1);const end=next.toISOString();
-  const prior=await db.from('daily_closing_snapshots').select('closing_inventory_value').lt('record_date',day).order('record_date',{ascending:false}).limit(1).maybeSingle();if(prior.error)throw prior.error;
+  const priorCtx=await db.rpc('get_close_day_context',{p_date:day});if(priorCtx.error)throw priorCtx.error;
   const [sales,purchases,expenses,waste,prod]=await Promise.all([
    db.from('sales').select('total').gte('sale_date',day).lt('sale_date',end),db.from('purchases').select('total').gte('purchase_date',day).lt('purchase_date',end),db.from('expenses').select('amount').eq('expense_date',day),db.from('wastage').select('item_id,quantity').gte('wastage_date',day).lt('wastage_date',end),db.from('production_runs').select('id').gte('production_date',day).lt('production_date',end)
   ]);const results=[sales,purchases,expenses,waste,prod];const bad=results.find(x=>x.error);if(bad)throw bad.error;
   const sv=(sales.data||[]).reduce((a,x)=>a+Number(x.total||0),0),pv=(purchases.data||[]).reduce((a,x)=>a+Number(x.total||0),0),ev=(expenses.data||[]).reduce((a,x)=>a+Number(x.amount||0),0);
-  const wv=(waste.data||[]).reduce((a,x)=>{const it=items.find(i=>i.id===x.item_id);return a+Number(x.quantity||0)*Number(it?.cost_per_unit||0)},0),iv=items.reduce((a,i)=>a+Number(i.current_qty||0)*Number(i.cost_per_unit||0),0),opening=prior.data?Number(prior.data.closing_inventory_value||0):0;
+  const wv=(waste.data||[]).reduce((a,x)=>{const it=items.find(i=>i.id===x.item_id);return a+Number(x.quantity||0)*Number(it?.cost_per_unit||0)},0),iv=items.reduce((a,i)=>a+Number(i.current_qty||0)*Number(i.cost_per_unit||0),0),opening=Number(priorCtx.data?.opening_inventory_value||0);
   const snap={record_date:day,user_id:user.id,opening_inventory_value:opening,closing_inventory_value:iv,total_purchases:pv,total_sales:sv,total_wastage_value:wv,total_expenses:ev,production_count:(prod.data||[]).length,notes:$('closeNotes').value.trim(),snapshot_data:{closing_cash:Number($('closeCash').value)||0,inventory:items.map(i=>({id:i.id,name:i.name,qty:Number(i.current_qty||0),unit:i.unit}))}};
-  const r=await db.from('daily_closing_snapshots').upsert(snap,{onConflict:'record_date'});if(r.error)throw r.error;await logActivity('Close Day','Reports',{date:day,closing_cash:Number($('closeCash').value)||0});message('closeMsg','Today '+day+' was saved to the cloud. Opening inventory value: '+money(opening)+'.',true);await loadSnapshots();
+  const r=await db.rpc('save_daily_closing_snapshot',{p_snapshot:snap});if(r.error)throw r.error;await logActivity('Close Day','Reports',{date:day,closing_cash:Number($('closeCash').value)||0});message('closeMsg','Today '+day+' was saved to the cloud. Opening inventory value: '+money(opening)+'.',true);await loadSnapshots();
  }catch(e){message('closeMsg',e.message||String(e))}
 }
 
