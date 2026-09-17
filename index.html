@@ -688,26 +688,38 @@ window.editItem=async function(id){
  let q=prompt('Quantity ('+uLabel+'):',i.current_qty);if(q===null)return;
  let re=prompt('Reorder level ('+uLabel+'):',i.reorder_level);if(re===null)return;
  let c=prompt('Cost per '+uLabel+':',i.cost_per_unit);if(c===null)return;
- const payload={name:n.trim(),current_qty:Number(q),reorder_level:Number(re),cost_per_unit:Number(c)};
+ const name=n.trim(),quantity=Number(q),reorderLevel=Number(re),cost=Number(c);
+ if(!name){toast('Item name cannot be empty.',true);return}
+ if(!Number.isFinite(quantity)||quantity<0){toast('Quantity must be a valid non-negative number.',true);return}
+ if(!Number.isFinite(reorderLevel)||reorderLevel<0){toast('Reorder level must be a valid non-negative number.',true);return}
+ if(!Number.isFinite(cost)||cost<0){toast('Cost per unit must be a valid non-negative number.',true);return}
+ const payload={name,current_qty:quantity,reorder_level:reorderLevel,cost_per_unit:cost};
  if(i.item_type==='finished_product'){
    let s=prompt('Selling price:',i.selling_price);if(s===null)return;
-   payload.selling_price=Number(s);
+   const sellingPrice=Number(s);
+   if(!Number.isFinite(sellingPrice)||sellingPrice<0){toast('Selling price must be a valid non-negative number.',true);return}
+   payload.selling_price=sellingPrice;
  }
  let r=await db.from('inventory_items').update(payload).eq('id',id);
- if(r.error)toast(r.error.message,true);else{await logActivity('Edit Item','Inventory',{item_id:id,name:n.trim(),quantity:Number(q),reorder_level:Number(re)});refresh()}
+ if(r.error)toast(r.error.message,true);else{await logActivity('Edit Item','Inventory',{item_id:id,name,quantity,reorder_level:reorderLevel});refresh()}
 }
 window.deactivateItem=async function(id){let i=items.find(x=>x.id===id);if(!i)return;const name=i.name;if(!confirm('Remove "'+name+'" from active inventory? It will be hidden from lists but its history is kept.'))return;let r=await db.from('inventory_items').update({active:false}).eq('id',id);if(r.error)toast(r.error.message,true);else{await logActivity('Remove Item','Inventory',{item_id:id,item:name});toast('"'+name+'" removed from active inventory.');refresh()}}
 function syncNewItemUnit(){const fin=$('newItemType').value==='finished_product';$('newItemUnit').disabled=fin;if(fin)$('newItemUnit').value='packets';const wrap=$('newItemPriceWrap');if(wrap)wrap.style.display=fin?'block':'none';if(!fin)$('newItemPrice').value='0';const lbl=$('newItemCostLabel');if(lbl)lbl.textContent='Cost per '+(($('newItemUnit').value||'unit').trim())+':';}
 function openItemModal(){$('itemModalMsg').innerHTML='';$('newItemName').value='';$('newItemType').value='raw_material';$('newItemUnit').disabled=false;$('newItemUnit').value='';$('newItemQty').value='0';$('newItemReorder').value='0';$('newItemCost').value='0';$('newItemPrice').value='0';syncNewItemUnit();$('itemModal').classList.add('open');$('newItemName').focus()}
 function closeItemModal(){$('itemModal').classList.remove('open')}
 async function saveNewItem(){
-  const name=$('newItemName').value.trim(),unit=$('newItemType').value==='finished_product'?'packets':$('newItemUnit').value.trim();
+  const itemType=$('newItemType').value,name=$('newItemName').value.trim(),unit=itemType==='finished_product'?'packets':$('newItemUnit').value.trim();
+  const quantity=Number($('newItemQty').value),reorderLevel=Number($('newItemReorder').value),cost=Number($('newItemCost').value),sellingPrice=Number($('newItemPrice').value);
   if(!name||!unit){message('itemModalMsg','Enter at least a name and a unit.');return}
-  const payload={name,item_type:$('newItemType').value,unit,current_qty:Number($('newItemQty').value)||0,reorder_level:Number($('newItemReorder').value)||0,cost_per_unit:Number($('newItemCost').value)||0,selling_price:$('newItemType').value==='finished_product'?(Number($('newItemPrice').value)||0):0,active:true};
-  try{const r=await db.from('inventory_items').insert(payload);if(r.error)throw r.error;await logActivity('Add Item','Inventory',{item:name,item_type:$('newItemType').value});toast('"'+name+'" added to inventory.');closeItemModal();await refresh()}
+  if(!['raw_material','finished_product'].includes(itemType)){message('itemModalMsg','Select a valid item type.');return}
+  if(!Number.isFinite(quantity)||quantity<0){message('itemModalMsg','Opening quantity must be a valid non-negative number.');return}
+  if(!Number.isFinite(reorderLevel)||reorderLevel<0){message('itemModalMsg','Reorder level must be a valid non-negative number.');return}
+  if(!Number.isFinite(cost)||cost<0){message('itemModalMsg','Cost per unit must be a valid non-negative number.');return}
+  if(itemType==='finished_product'&&(!Number.isFinite(sellingPrice)||sellingPrice<0)){message('itemModalMsg','Selling price must be a valid non-negative number.');return}
+  const payload={name,item_type:itemType,unit,current_qty:quantity,reorder_level:reorderLevel,cost_per_unit:cost,selling_price:itemType==='finished_product'?sellingPrice:0,active:true};
+  try{const r=await db.from('inventory_items').insert(payload);if(r.error)throw r.error;await logActivity('Add Item','Inventory',{item:name,item_type:itemType});toast('"'+name+'" added to inventory.');closeItemModal();await refresh()}
   catch(e){message('itemModalMsg',e.message||String(e))}
 }
-
 // Recipe ingredients: link raw materials to a recipe (recipe_items) so a newly
 // added raw material actually gets deducted during production, instead of just
 // sitting in inventory unconnected to anything.
@@ -873,12 +885,11 @@ async function assistantFetch(){
     db.from('expenses').select('expense_date,amount,category,description').order('expense_date',{ascending:false}).limit(2000),
     db.from('production_runs').select('production_date,output_quantity,recipe_id,notes').order('production_date',{ascending:false}).limit(2000),
     db.from('wastage').select('wastage_date,item_id,quantity,reason').order('wastage_date',{ascending:false}).limit(2000),
-    db.from('activity_logs').select('created_at,user_id,action,section,details').order('created_at',{ascending:false}).limit(2000),
-    db.from('activity_log').select('created_at,user_id,action,entity_type,entity_id,details,section').order('created_at',{ascending:false}).limit(2000)
+    db.from('activity_logs').select('created_at,user_id,action,section,details').order('created_at',{ascending:false}).limit(2000)
   ]);
   const bad=[sales,purchases,expenses,production,waste,activity].find(x=>x.error);
   if(bad) throw bad.error;
-  return {sales:sales.data||[],purchases:purchases.data||[],expenses:expenses.data||[],production:production.data||[],waste:waste.data||[],activity:[...(activity.data||[]),...(dbAudit.data||[])].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,2000)};
+  return {sales:sales.data||[],purchases:purchases.data||[],expenses:expenses.data||[],production:production.data||[],waste:waste.data||[],activity:(activity.data||[]).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,2000)};
 }
 function sumField(rows,key){return rows.reduce((a,x)=>a+Number(x[key]||0),0)}
 function dayAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().slice(0,10)}
