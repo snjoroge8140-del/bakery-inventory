@@ -955,14 +955,25 @@ $('downloadReportPdf').onclick=downloadReportPdf;$('printReport').onclick=printR
   if(typed!=='RESET'){if(typed!==null)toast('Reset cancelled.',false);return}
   const first=confirm('Final warning: this will permanently remove the demo transaction figures and reset stock. Continue?');
   if(!first)return;
-  const securityEmail=user.email||'your registered security email';
   toast('Sending a verification code to your registered security email…',false);
   const req=await db.auth.reauthenticate();
-  if(req.error){toast(req.error.message||'Could not send verification code.',true);return}
-  const code=prompt('A verification code has been sent to '+securityEmail+'.\n\nEnter the code to authorize the demo reset:');
-  if(code===null){toast('Reset cancelled.',false);return}
-  const verify=await db.functions.invoke('demo-reset-2fa',{body:{action:'confirm',code:String(code).trim()}});
-  if(verify.error){toast(verify.error.message||'Verification failed.',true);return}
+  if(req.error){
+    const msg=String(req.error.message||req.error);
+    if(/rate limit|too many|email/i.test(msg)){
+      const password=prompt('Email verification is temporarily rate-limited.\n\nFor this one reset only, verify your identity with your current account password:');
+      if(password===null){toast('Reset cancelled.',false);return}
+      if(!password){toast('Password verification cancelled.',true);return}
+      const passwordAuth=await db.auth.signInWithPassword({email:user.email,password});
+      if(passwordAuth.error || passwordAuth.data?.user?.id!==user.id){toast(passwordAuth.error?.message||'Incorrect account password.',true);return}
+      const verifyPassword=await db.functions.invoke('demo-reset-2fa',{body:{action:'confirm_password'}});
+      if(verifyPassword.error){toast(verifyPassword.error.message||'Password verification failed.',true);return}
+    }else{toast(msg||'Could not send verification code.',true);return}
+  }else{
+    const code=prompt('A verification code has been sent to '+(user.email||'your registered security email')+'.\n\nEnter the code to authorize the demo reset:');
+    if(code===null){toast('Reset cancelled.',false);return}
+    const verify=await db.functions.invoke('demo-reset-2fa',{body:{action:'confirm',code:String(code).trim()}});
+    if(verify.error){toast(verify.error.message||'Verification failed.',true);return}
+  }
   toast('Demo data reset successfully. Refreshing…',false);
   setTimeout(()=>location.reload(),900);
 }
