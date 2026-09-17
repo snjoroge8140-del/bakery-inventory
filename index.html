@@ -959,7 +959,7 @@ $('downloadReportPdf').onclick=downloadReportPdf;$('printReport').onclick=printR
   toast('Sending a verification code to your registered security email…',false);
   const req=await db.auth.reauthenticate();
   if(req.error){toast(req.error.message||'Could not send verification code.',true);return}
-  const code=prompt('A verification code has been sent to '+securityEmail+'.\\n\\nEnter the code to authorize the demo reset:');
+  const code=prompt('A verification code has been sent to '+securityEmail+'.\n\nEnter the code to authorize the demo reset:');
   if(code===null){toast('Reset cancelled.',false);return}
   const verify=await db.functions.invoke('demo-reset-2fa',{body:{action:'confirm',code:String(code).trim()}});
   if(verify.error){toast(verify.error.message||'Verification failed.',true);return}
